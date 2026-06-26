@@ -9,6 +9,7 @@ class Config:
     SET_TIMER = 600
     # Database connection string
     DB_CONNECTION_STRING = os.getenv("DB_CONNECTION_STRING")
+    DB_USE_TLS = os.getenv("DB_USE_TLS")
     
     # Encryption key
     HEX_ENCRYPTION_KEY = os.getenv("HEX_ENCRYPTION_KEY")
