@@ -105,7 +105,7 @@ encryption_key = bytes.fromhex(HEX_ENCRYPTION_KEY)
 # Only bypass SSL verification in development
 client = AsyncIOMotorClient(
     Config.DB_CONNECTION_STRING,
-    tls=(Config.DB_USE_TLS == "true"),
+    tls=(Config.ENV != 'development'),
     tlsAllowInvalidCertificates=(Config.ENV == 'development'),
     connectTimeoutMS=30000,
     serverSelectionTimeoutMS=30000
