@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
+import re
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -83,6 +84,18 @@ async def verify_jwt_token(token: str) -> dict:
     except jwt.InvalidTokenError:
         raise ValueError("Invalid token")
 
+def password_meets_requirements(password: str) -> str | None:
+    """Function to validate a password is at least 8 characters and contains a number, lowercase and capital letter."""
+    if len(password) < 8:
+        return "Password must be at least 8 characters."
+    if not re.search(r'[A-Z]', password):
+        return "Password must contain at least one capital letter."
+    if not re.search(r'[a-z]', password):
+        return "Password must contain at least one lowercase letter."
+    if not re.search(r'\d', password):
+        return "Password must contain at least one number."
+    return None
+
 async def achieveup_signup(name: str, email: str, password: str, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
     """User registration with email/password and optional Canvas API token."""
     try:
@@ -93,6 +106,15 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
                 'error': 'User already exists',
                 'message': 'A user with this email already exists',
                 'statusCode': 409
+            }
+        
+        # Validate the password meets the expected password requirements.
+        password_check: str | None = password_meets_requirements(password)
+        if password_check:
+            return {
+                "error": "Password does not meet requirements.",
+                "message": password_check,
+                "statusCode": 400
             }
         
         # Hash password
