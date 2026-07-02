@@ -400,6 +400,15 @@ async def achieveup_change_password(token: str, current_password: str, new_passw
                 'message': 'User not found',
                 'statusCode': 404
             }
+
+        # Validate the password meets the expected password requirements.
+        password_check: str | None = password_meets_requirements(new_password)
+        if password_check:
+            return {
+                "error": "Password does not meet requirements.",
+                "message": password_check,
+                "statusCode": 400
+            }
         
         # Verify current password
         if not bcrypt.checkpw(current_password.encode('utf-8'), user['password'].encode('utf-8')):
