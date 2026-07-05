@@ -42,7 +42,7 @@ async def achieveup_signup_route():
         if 'error' in result:
             return jsonify({
                 'error': result['error'],
-                'message': result['error'],
+                'message': result['message'],
                 'statusCode': result['statusCode']
             }), result['statusCode']
         
@@ -301,7 +301,7 @@ async def achieveup_change_password_route():
         if 'error' in result:
             return jsonify({
                 'error': result['error'],
-                'message': result['error'],
+                'message': result['message'],
                 'statusCode': result['statusCode']
             }), result['statusCode']
         
