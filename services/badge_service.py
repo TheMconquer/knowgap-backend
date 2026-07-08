@@ -121,8 +121,7 @@ async def get_user_badges(token: str, course_id: str = None, skill_id: str = Non
         
         # Get badges from database
         badges = []
-        async for badge in achieveup_user_badges_collection.find(query):
-            badge.pop('_id', None)
+        async for badge in achieveup_user_badges_collection.find(query, {"_id": 0}):
             badges.append(badge)
         
         # Sort by earned date (newest first)
@@ -148,7 +147,7 @@ async def get_badge_details(token: str, badge_id: str) -> dict:
         badge = await achieveup_user_badges_collection.find_one({
             'badge_id': badge_id,
             'user_id': user_id
-        })
+        }, {"_id": 0})
         
         if not badge:
             return {
@@ -156,9 +155,6 @@ async def get_badge_details(token: str, badge_id: str) -> dict:
                 'message': 'Badge not found or access denied',
                 'statusCode': 404
             }
-        
-        # Remove MongoDB _id field
-        badge.pop('_id', None)
         
         # Add additional badge details
         badge_details = {
@@ -296,7 +292,7 @@ async def get_badge_progress(token: str, skill_id: str, course_id: str) -> dict:
             'user_id': user_id,
             'skill_id': skill_id,
             'course_id': course_id
-        })
+        }, {"_id": 0})
         
         if not progress:
             # Initialize progress if not exists
@@ -328,8 +324,6 @@ async def get_badge_progress(token: str, skill_id: str, course_id: str) -> dict:
                 'badge_name': badge.get('badge_name'),
                 'earned_at': badge.get('earned_at')
             })
-        
-        progress.pop('_id', None)
         
         return {
             'progress': progress,
@@ -450,10 +444,9 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
         
         # Get all badges for the student (only earned ones with progress >= 80)
         badges = []
-        async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}):
+        async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0}):
             # Only include badges that are actually earned (80% or higher)
             if badge_doc.get('progress_percentage', 0) >= 80:
-                badge_doc.pop('_id', None)
                 badges.append(badge_doc)
         
         # Get course names from Canvas API
@@ -531,10 +524,9 @@ async def get_public_student_earned_badges(student_id: str) -> dict:
     try:
         # Get all badges for the student (only earned ones with progress >= 80)
         badges = []
-        async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}):
+        async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0}):
             # Only include badges that are actually earned (80% or higher)
             if badge_doc.get('progress_percentage', 0) >= 80:
-                badge_doc.pop('_id', None)
                 badges.append(badge_doc)
         
         # Sort by earned date (newest first)
