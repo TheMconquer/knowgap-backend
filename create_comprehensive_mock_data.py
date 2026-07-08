@@ -17,7 +17,7 @@ import dotenv
 import os
 import uuid
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 
 dotenv.load_dotenv()
@@ -125,8 +125,8 @@ async def create_skill_matrices(skill_matrices_collection):
             'course_name': course_info['name'],
             'course_code': course_info['code'],
             'skills': course_info['skills'],
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         await skill_matrices_collection.insert_one(skill_matrix_doc)
@@ -163,8 +163,8 @@ async def create_skill_assignments(skill_assignments_collection):
                     'human_reviewed': False,
                     'assigned_by_instructor': True,
                     'instructor_id': 'demo_instructor',
-                    'created_at': datetime.utcnow(),
-                    'updated_at': datetime.utcnow()
+                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+                    'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
                 
                 await skill_assignments_collection.insert_one(assignment_doc)
@@ -245,7 +245,7 @@ async def create_student_quiz_attempts(quiz_attempts_collection):
                 
                 # Random submission date in the last 30 days
                 days_ago = random.randint(1, 30)
-                submission_date = datetime.utcnow() - timedelta(days=days_ago)
+                submission_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days_ago)
                 
                 attempt_doc = {
                     'student_id': student_id,
@@ -360,7 +360,7 @@ async def calculate_and_store_skill_progress(skill_progress_collection, quiz_att
                                 'questions_correct': stats['questions_correct'],
                                 'total_points': stats['total_points'],
                                 'max_points': stats['max_points'],
-                                'updated_at': datetime.utcnow()
+                                'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
                             }}
                         )
                     else:
@@ -377,8 +377,8 @@ async def calculate_and_store_skill_progress(skill_progress_collection, quiz_att
                             'total_points': stats['total_points'],
                             'max_points': stats['max_points'],
                             'completed': score_percentage >= 70,
-                            'created_at': datetime.utcnow(),
-                            'updated_at': datetime.utcnow()
+                            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+                            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
                         }
                         
                         await skill_progress_collection.insert_one(progress_doc)

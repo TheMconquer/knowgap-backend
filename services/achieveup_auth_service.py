@@ -4,7 +4,7 @@ import jwt
 import bcrypt
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 import re
@@ -42,8 +42,8 @@ def create_jwt_token(user_id: str, email: str, role: str, canvas_token_type: str
         'email': email,
         'role': role,
         'canvas_token_type': canvas_token_type,
-        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
-        'iat': datetime.utcnow()
+        'exp': datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=JWT_EXPIRATION_HOURS),
+        'iat': datetime.now(timezone.utc).replace(tzinfo=None)
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token
@@ -134,8 +134,8 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
             'password': hashed_password.decode('utf-8'),
             'role': role,
             'canvas_token_type': canvas_token_type,
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Handle Canvas API token if provided
@@ -163,8 +163,8 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
             from utils.encryption_utils import encrypt_token
             encrypted_token = encrypt_token(bytes.fromhex(Config.HEX_ENCRYPTION_KEY), canvas_api_token)
             user_doc['canvas_api_token'] = encrypted_token
-            user_doc['canvas_token_created_at'] = datetime.utcnow()
-            user_doc['canvas_token_last_validated'] = datetime.utcnow()
+            user_doc['canvas_token_created_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
+            user_doc['canvas_token_last_validated'] = datetime.now(timezone.utc).replace(tzinfo=None)
         
         # Insert user into database
         await achieveup_users_collection.insert_one(user_doc)
@@ -320,7 +320,7 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
         update_data = {
             'name': name,
             'email': email,
-            'updated_at': datetime.utcnow()
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Only update Canvas API token if provided
@@ -349,8 +349,8 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             from utils.encryption_utils import encrypt_token
             encrypted_token = encrypt_token(bytes.fromhex(Config.HEX_ENCRYPTION_KEY), canvas_api_token)
             update_data['canvas_api_token'] = encrypted_token
-            update_data['canvas_token_created_at'] = datetime.utcnow()
-            update_data['canvas_token_last_validated'] = datetime.utcnow()
+            update_data['canvas_token_created_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
+            update_data['canvas_token_last_validated'] = datetime.now(timezone.utc).replace(tzinfo=None)
             update_data['canvas_token_type'] = token_type
         
         # Update canvas_token_type if provided (even without new token)
@@ -428,7 +428,7 @@ async def achieveup_change_password(token: str, current_password: str, new_passw
             {
                 '$set': {
                     'password': hashed_new_password.decode('utf-8'),
-                    'updated_at': datetime.utcnow()
+                    'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             }
         )

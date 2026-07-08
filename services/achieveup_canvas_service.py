@@ -4,7 +4,7 @@ import aiohttp
 import ssl
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_canvas_demo_service import (
@@ -490,7 +490,7 @@ async def cache_canvas_data(course_id: str, data_type: str, data: list) -> None:
             'course_id': course_id,
             'data_type': data_type,
             'data': data,
-            'cached_at': datetime.utcnow()
+            'cached_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         if data_type == 'courses':
@@ -529,7 +529,7 @@ async def get_cached_canvas_data(course_id: str, data_type: str) -> dict:
             
         if cached:
             # Check if cache is still valid (e.g., less than 1 hour old)
-            cache_age = datetime.utcnow() - cached['cached_at']
+            cache_age = datetime.now(timezone.utc).replace(tzinfo=None) - cached['cached_at']
             if cache_age.total_seconds() < 3600:  # 1 hour
                 return cached['data']
                 

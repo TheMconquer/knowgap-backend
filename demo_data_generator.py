@@ -20,7 +20,7 @@ import asyncio
 import uuid
 import bcrypt
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 
@@ -199,8 +199,8 @@ async def create_demo_instructor(users_collection):
     hashed_password = bcrypt.hashpw(DEMO_INSTRUCTOR_PASSWORD.encode('utf-8'), salt)
     
     # Encrypt demo Canvas token
-            from utils.encryption_utils import encrypt_token
-        encrypted_token = encrypt_token(bytes.fromhex(Config.HEX_ENCRYPTION_KEY), DEMO_CANVAS_TOKEN)
+    from utils.encryption_utils import encrypt_token
+    encrypted_token = encrypt_token(bytes.fromhex(Config.HEX_ENCRYPTION_KEY), DEMO_CANVAS_TOKEN)
     
     instructor_id = str(uuid.uuid4())
     instructor_doc = {
@@ -211,10 +211,10 @@ async def create_demo_instructor(users_collection):
         'role': 'instructor',
         'canvas_token_type': 'instructor',
         'canvas_api_token': encrypted_token,
-        'canvas_token_created_at': datetime.utcnow(),
-        'canvas_token_last_validated': datetime.utcnow(),
-        'created_at': datetime.utcnow(),
-        'updated_at': datetime.utcnow()
+        'canvas_token_created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+        'canvas_token_last_validated': datetime.now(timezone.utc).replace(tzinfo=None),
+        'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+        'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
     }
     
     await users_collection.insert_one(instructor_doc)
@@ -247,8 +247,8 @@ async def create_skill_matrices(skill_matrices_collection):
             'matrix_name': f"{course['name']} Skills",
             'skills': COURSE_SKILLS[course_id],
             'description': f"AI-generated skills for {course['name']}",
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         await skill_matrices_collection.insert_one(matrix_doc)
@@ -278,8 +278,8 @@ async def create_question_assignments(question_skills_collection):
                 'human_reviewed': False,
                 'assigned_by_instructor': True,
                 'instructor_id': 'demo_instructor',
-                'created_at': datetime.utcnow(),
-                'updated_at': datetime.utcnow()
+                'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+                'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
             }
             
             await question_skills_collection.insert_one(assignment_doc)
@@ -333,7 +333,7 @@ async def create_demo_students_and_progress(progress_collection):
                 
                 # Random activity dates in the last 30 days
                 days_ago = random.randint(1, 30)
-                activity_date = datetime.utcnow() - timedelta(days=days_ago)
+                activity_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days_ago)
                 
                 progress_doc = {
                     'student_id': student_id,
@@ -423,8 +423,8 @@ async def create_analytics_summary(analytics_collection, progress_collection):
                 'medium': medium_risk,
                 'low': low_risk
             },
-            'generated_at': datetime.utcnow(),
-            'last_updated': datetime.utcnow()
+            'generated_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'last_updated': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         await analytics_collection.insert_one(analytics_doc)
