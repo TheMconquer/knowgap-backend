@@ -353,10 +353,6 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             update_data['canvas_token_last_validated'] = datetime.utcnow()
             update_data['canvas_token_type'] = token_type
         
-        # Update canvas_token_type if provided (even without new token)
-        if canvas_token_type is not None:
-            update_data['canvas_token_type'] = canvas_token_type
-        
         # Update user in database
         await achieveup_users_collection.update_one(
             {'user_id': user_id},
