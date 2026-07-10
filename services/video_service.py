@@ -248,7 +248,6 @@ async def set_video_watched(student_id, course_id, video_link, watched):
         )
     return {"success": True}
 
-## NOT_USED_ELSEWHERE
 async def get_watched_videos(student_id, course_id):
     """Get the list of watched video links for a student in a course."""
     course_key = str(course_id)
