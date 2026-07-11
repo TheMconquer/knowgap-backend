@@ -77,7 +77,7 @@ async def get_skill_matrix(token: str, matrix_id: str) -> dict:
             return user_result
         
         # Find matrix in database
-        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id})
+        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id}, {"_id": 0})
         
         if not matrix:
             return {
@@ -85,9 +85,6 @@ async def get_skill_matrix(token: str, matrix_id: str) -> dict:
                 'message': 'Skill matrix not found',
                 'statusCode': 404
             }
-        
-        # Remove MongoDB _id field
-        matrix.pop('_id', None)
         
         return {'matrix': matrix}
         
@@ -138,8 +135,7 @@ async def update_skill_matrix(token: str, matrix_id: str, data: dict) -> dict:
         )
         
         # Get updated matrix
-        updated_matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id})
-        updated_matrix.pop('_id', None)
+        updated_matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id}, {"_id": 0})
         
         return {
             'message': 'Skill matrix updated successfully',
@@ -198,8 +194,7 @@ async def get_course_skill_matrices(token: str, course_id: str) -> dict:
         
         # Find all matrices for the course
         matrices = []
-        async for matrix in achieveup_skill_matrices_collection.find({'course_id': course_id}):
-            matrix.pop('_id', None)
+        async for matrix in achieveup_skill_matrices_collection.find({'course_id': course_id}, {"_id": 0}):
             matrices.append(matrix)
         
         return {'matrices': matrices}

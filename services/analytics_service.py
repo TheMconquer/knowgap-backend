@@ -45,8 +45,7 @@ async def get_course_analytics(token: str, course_id: str, time_range: str = '30
         
         # Get course analytics data
         analytics_data = []
-        async for analytics in achieveup_course_analytics_collection.find(query):
-            analytics.pop('_id', None)
+        async for analytics in achieveup_course_analytics_collection.find(query, {"_id": 0}):
             analytics_data.append(analytics)
         
         # Calculate course-wide statistics
@@ -92,8 +91,7 @@ async def get_student_comparison(token: str, course_id: str, skill_id: str = Non
         
         # Get all student data for comparison
         student_data = []
-        async for student in achieveup_student_analytics_collection.find(query):
-            student.pop('_id', None)
+        async for student in achieveup_student_analytics_collection.find(query, {"_id": 0}):
             student_data.append(student)
         
         if not student_data:
@@ -148,8 +146,7 @@ async def get_skill_performance_analytics(token: str, skill_id: str, course_id: 
         
         # Get skill analytics data
         skill_data = []
-        async for analytics in achieveup_skill_analytics_collection.find(query):
-            analytics.pop('_id', None)
+        async for analytics in achieveup_skill_analytics_collection.find(query, {"_id": 0}):
             skill_data.append(analytics)
         
         if not skill_data:

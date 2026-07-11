@@ -300,7 +300,7 @@ async def get_cached_submission(student_id: str, course_id: str, quiz_id: str) -
             'student_id': student_id,
             'course_id': course_id,
             'quiz_id': quiz_id
-        })
+        }, {"_id": 0})
         
         if submission:
             # Check cache freshness (default: 1 hour)
@@ -308,7 +308,6 @@ async def get_cached_submission(student_id: str, course_id: str, quiz_id: str) -
             cache_age = (datetime.now(timezone.utc).replace(tzinfo=None) - submission.get('cached_at', datetime.min)).total_seconds()
             
             if cache_age < cache_ttl:
-                submission.pop('_id', None)
                 return submission
         
         return None

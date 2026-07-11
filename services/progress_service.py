@@ -39,8 +39,7 @@ async def get_user_progress(token: str, course_id: str = None, skill_id: str = N
         
         # Get progress from database
         progress_data = []
-        async for progress in achieveup_user_progress_collection.find(query):
-            progress.pop('_id', None)
+        async for progress in achieveup_user_progress_collection.find(query, {"_id": 0}):
             progress_data.append(progress)
         
         # Calculate summary statistics
@@ -159,8 +158,7 @@ async def get_progress_analytics(token: str, course_id: str = None, time_range: 
         
         # Get analytics data
         analytics_data = []
-        async for analytics in achieveup_progress_analytics_collection.find(query):
-            analytics.pop('_id', None)
+        async for analytics in achieveup_progress_analytics_collection.find(query, {"_id": 0}):
             analytics_data.append(analytics)
         
         # Calculate trends
@@ -196,8 +194,7 @@ async def export_progress_data(token: str, course_id: str = None, format_type: s
             query['course_id'] = course_id
         
         progress_data = []
-        async for progress in achieveup_user_progress_collection.find(query):
-            progress.pop('_id', None)
+        async for progress in achieveup_user_progress_collection.find(query, {"_id": 0}):
             progress_data.append(progress)
         
         # Format data based on export type
