@@ -3,7 +3,7 @@
 import logging
 import json
 import statistics
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
@@ -32,7 +32,7 @@ async def get_course_analytics(token: str, course_id: str, time_range: str = '30
         user_id = user_result.get('user_id')
         
         # Calculate date range
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc).replace(tzinfo=None)
         start_date = calculate_start_date(time_range, end_date)
         
         # Build query
@@ -45,8 +45,7 @@ async def get_course_analytics(token: str, course_id: str, time_range: str = '30
         
         # Get course analytics data
         analytics_data = []
-        async for analytics in achieveup_course_analytics_collection.find(query):
-            analytics.pop('_id', None)
+        async for analytics in achieveup_course_analytics_collection.find(query, {"_id": 0}):
             analytics_data.append(analytics)
         
         # Calculate course-wide statistics
@@ -92,8 +91,7 @@ async def get_student_comparison(token: str, course_id: str, skill_id: str = Non
         
         # Get all student data for comparison
         student_data = []
-        async for student in achieveup_student_analytics_collection.find(query):
-            student.pop('_id', None)
+        async for student in achieveup_student_analytics_collection.find(query, {"_id": 0}):
             student_data.append(student)
         
         if not student_data:
@@ -136,7 +134,7 @@ async def get_skill_performance_analytics(token: str, skill_id: str, course_id: 
         user_id = user_result.get('user_id')
         
         # Calculate date range
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc).replace(tzinfo=None)
         start_date = calculate_start_date(time_range, end_date)
         
         # Build query
@@ -148,8 +146,7 @@ async def get_skill_performance_analytics(token: str, skill_id: str, course_id: 
         
         # Get skill analytics data
         skill_data = []
-        async for analytics in achieveup_skill_analytics_collection.find(query):
-            analytics.pop('_id', None)
+        async for analytics in achieveup_skill_analytics_collection.find(query, {"_id": 0}):
             skill_data.append(analytics)
         
         if not skill_data:
@@ -197,7 +194,7 @@ async def get_trend_analytics(token: str, course_ids: str = None, skill_ids: str
         user_id = user_result.get('user_id')
         
         # Calculate date range
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc).replace(tzinfo=None)
         start_date = calculate_start_date(time_range, end_date)
         
         # Parse course and skill IDs
@@ -274,7 +271,7 @@ async def export_analytics_data(token: str, course_id: str = None, skill_id: str
             content_type = 'application/json'
         
         # Generate filename
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')
         filename = f"achieveup_analytics_{analytics_type}_{timestamp}.{format_type}"
         
         return {
@@ -349,7 +346,7 @@ def calculate_performance_trends(analytics_data: list) -> dict:
     # Group by date and calculate averages
     daily_averages = {}
     for data in analytics_data:
-        date = data.get('timestamp', datetime.utcnow()).date()
+        date = data.get('timestamp', datetime.now(timezone.utc).replace(tzinfo=None)).date()
         if date not in daily_averages:
             daily_averages[date] = []
         daily_averages[date].append(data.get('progress_percentage', 0))
@@ -472,7 +469,7 @@ def calculate_performance_over_time(skill_data: list) -> list:
     # Group by date
     daily_performance = {}
     for data in skill_data:
-        date = data.get('timestamp', datetime.utcnow()).date()
+        date = data.get('timestamp', datetime.now(timezone.utc).replace(tzinfo=None)).date()
         if date not in daily_performance:
             daily_performance[date] = []
         daily_performance[date].append(data.get('progress_percentage', 0))
@@ -922,7 +919,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                     'realAssignmentCount': real_assignment_count,
                     'demoModeEnabled': Config.ENABLE_DEMO_MODE,
                     'queryCourseId': course_id,
-                    'serverTime': datetime.utcnow().isoformat()
+                    'serverTime': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                 }
             }
         }
@@ -983,7 +980,7 @@ async def get_course_risk_assessment(token: str, course_id: str, time_range: str
             'riskFactors': risk_factors,
             'recommendations': recommendations,
             'trendData': trend_data,
-            'generatedAt': datetime.utcnow().isoformat()
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
     except Exception as e:
@@ -1028,7 +1025,7 @@ async def export_course_analytics(token: str, course_id: str, format_type: str =
             'format': format_type,
             'timeRange': time_range,
             'exportData': exported_data,
-            'generatedAt': datetime.utcnow().isoformat()
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
     except Exception as e:
@@ -1049,7 +1046,7 @@ async def get_individual_graphs(token: str, course_id: str, student_id: str, gra
         from datetime import datetime, timedelta
         
         # Calculate date range
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc).replace(tzinfo=None)
         if time_range == '7d':
             start_date = end_date - timedelta(days=7)
         elif time_range == '90d':
@@ -1094,7 +1091,7 @@ async def get_individual_graphs(token: str, course_id: str, student_id: str, gra
                     'end': end_date.isoformat()
                 }
             },
-            'generatedAt': datetime.utcnow().isoformat()
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
     except Exception as e:
@@ -1116,7 +1113,7 @@ def calculate_student_risk_level(progress_data: list, total_skills: int, time_ra
     
     # Calculate activity frequency
     from datetime import datetime, timedelta
-    recent_cutoff = datetime.utcnow() - timedelta(days=7)
+    recent_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
     recent_activity = len([p for p in progress_data if p.get('updated_at', datetime.min) > recent_cutoff])
     
     # Risk scoring
@@ -1236,7 +1233,7 @@ async def calculate_risk_trends(course_id: str, time_range: str) -> dict:
         from datetime import datetime, timedelta
         
         # Get historical data for trend calculation
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc).replace(tzinfo=None)
         if time_range == '7d':
             periods = 7
             delta = timedelta(days=1)

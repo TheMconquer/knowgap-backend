@@ -12,7 +12,7 @@ import aiohttp
 import asyncio
 import ssl
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
@@ -258,7 +258,7 @@ async def store_submission_data(course_id: str, submission_data: dict, force_cac
             return False
         
         submission_data['course_id'] = course_id
-        submission_data['cached_at'] = datetime.utcnow()
+        submission_data['cached_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
         
         # Upsert submission (update if exists, insert if new)
         await submissions_collection.update_one(
@@ -300,15 +300,14 @@ async def get_cached_submission(student_id: str, course_id: str, quiz_id: str) -
             'student_id': student_id,
             'course_id': course_id,
             'quiz_id': quiz_id
-        })
+        }, {"_id": 0})
         
         if submission:
             # Check cache freshness (default: 1 hour)
             cache_ttl = int(getattr(Config, 'SUBMISSION_CACHE_TTL', 3600))
-            cache_age = (datetime.utcnow() - submission.get('cached_at', datetime.min)).total_seconds()
+            cache_age = (datetime.now(timezone.utc).replace(tzinfo=None) - submission.get('cached_at', datetime.min)).total_seconds()
             
             if cache_age < cache_ttl:
-                submission.pop('_id', None)
                 return submission
         
         return None
@@ -449,7 +448,7 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                 'total_synced': 0,
                 'total_errors': 0,
                 'progress_synced': 0,
-                'synced_at': datetime.utcnow()
+                'synced_at': datetime.now(timezone.utc).replace(tzinfo=None)
             }
 
         total_synced = 0
@@ -569,7 +568,7 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                         'student_id': sid,
                         'course_id': str(course_id),
                         'skill_progress': skill_progress,
-                        'last_updated': datetime.utcnow()
+                        'last_updated': datetime.now(timezone.utc).replace(tzinfo=None)
                     }},
                     upsert=True
                 )
@@ -586,7 +585,7 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
             'total_synced': total_synced,
             'total_errors': total_errors,
             'progress_synced': progress_synced,
-            'synced_at': datetime.utcnow()
+            'synced_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
     except Exception as e:

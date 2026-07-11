@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
@@ -51,8 +51,8 @@ async def create_skill_matrix(token: str, data: dict) -> dict:
             'name': matrix_name,
             'skills': skills,
             'created_by': user_id,
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Insert into database
@@ -77,7 +77,7 @@ async def get_skill_matrix(token: str, matrix_id: str) -> dict:
             return user_result
         
         # Find matrix in database
-        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id})
+        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id}, {"_id": 0})
         
         if not matrix:
             return {
@@ -85,9 +85,6 @@ async def get_skill_matrix(token: str, matrix_id: str) -> dict:
                 'message': 'Skill matrix not found',
                 'statusCode': 404
             }
-        
-        # Remove MongoDB _id field
-        matrix.pop('_id', None)
         
         return {'matrix': matrix}
         
@@ -123,7 +120,7 @@ async def update_skill_matrix(token: str, matrix_id: str, data: dict) -> dict:
         
         # Prepare update data
         update_data = {
-            'updated_at': datetime.utcnow()
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         if 'name' in data:
@@ -138,8 +135,7 @@ async def update_skill_matrix(token: str, matrix_id: str, data: dict) -> dict:
         )
         
         # Get updated matrix
-        updated_matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id})
-        updated_matrix.pop('_id', None)
+        updated_matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id}, {"_id": 0})
         
         return {
             'message': 'Skill matrix updated successfully',
@@ -198,8 +194,7 @@ async def get_course_skill_matrices(token: str, course_id: str) -> dict:
         
         # Find all matrices for the course
         matrices = []
-        async for matrix in achieveup_skill_matrices_collection.find({'course_id': course_id}):
-            matrix.pop('_id', None)
+        async for matrix in achieveup_skill_matrices_collection.find({'course_id': course_id}, {"_id": 0}):
             matrices.append(matrix)
         
         return {'matrices': matrices}
@@ -259,7 +254,7 @@ async def assign_skill_to_question(token: str, data: dict) -> dict:
             'skill_id': skill_id,
             'matrix_id': matrix_id,
             'assigned_by': user_id,
-            'assigned_at': datetime.utcnow()
+            'assigned_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         await achieveup_skill_assignments_collection.update_one(

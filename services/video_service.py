@@ -7,6 +7,7 @@ from utils.youtube_utils import fetch_video_for_topic, extract_video_id, get_vid
 from utils.ai_utils import generate_core_topic
 from utils.db_utils import find_documents_by_field
 from config import Config
+from datetime import datetime, timezone
 
 # MongoDB async connection
 mongo_client = AsyncIOMotorClient(
@@ -255,8 +256,6 @@ async def get_watched_videos(student_id, course_id):
         return []
     watched_dict = student.get("watched_videos", {})
     return watched_dict.get(course_key, [])
-
-from datetime import datetime, timezone
 
 video_votes_collection = db["video_votes"]
 

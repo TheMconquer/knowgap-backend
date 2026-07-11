@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
@@ -89,8 +89,8 @@ async def create_skill_matrix(token: str, course_id: str, matrix_name: str, skil
             'course_id': course_id,
             'matrix_name': matrix_name,
             'skills': skills,
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Insert into database
@@ -117,7 +117,7 @@ async def update_skill_matrix(token: str, matrix_id: str, skills: list, matrix_n
                 '$set': {
                     'skills': skills,
                     'matrix_name': matrix_name,
-                    'updated_at': datetime.utcnow()
+                    'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
 
                 }
             }
@@ -308,7 +308,7 @@ async def upsert_course_description(token: str, course_id: str, description: str
                 'statusCode': 400
             }
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         query = {
             'course_id': str(course_id),
             'instructor_id': user['id']
@@ -354,7 +354,7 @@ async def assign_skills_to_questions(token: str, course_id: str, question_skills
                 'question_id': question_id,
                 'course_id': course_id,
                 'skills': skills,
-                'assigned_at': datetime.utcnow()
+                'assigned_at': datetime.now(timezone.utc).replace(tzinfo=None)
             }
             
             # Upsert assignment
@@ -548,7 +548,7 @@ async def generate_badges_for_student(token: str, student_id: str, course_id: st
                     'skill': skill_name,
                     'badge_type': badge_type,
                     'description': description,
-                    'earned_at': datetime.utcnow(),
+                    'earned_at': datetime.now(timezone.utc).replace(tzinfo=None),
                     'level': level
                 }
                 
@@ -599,7 +599,7 @@ async def get_student_progress(token: str, student_id: str, course_id: str) -> d
                 'student_id': student_id,
                 'course_id': course_id,
                 'skill_progress': {},
-                'last_updated': datetime.utcnow().isoformat()
+                'last_updated': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             }
         
         return progress
@@ -653,7 +653,7 @@ async def update_student_progress(token: str, student_id: str, course_id: str, s
             'student_id': student_id,
             'course_id': course_id,
             'skill_progress': skill_progress,
-            'last_updated': datetime.utcnow()
+            'last_updated': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         await achieveup_progress_collection.update_one(
@@ -751,21 +751,21 @@ async def import_course_data(token: str, course_id: str, import_data: dict) -> d
         for matrix in import_data.get('skill_matrices', []):
             matrix['course_id'] = course_id
             matrix['_id'] = str(uuid.uuid4())
-            matrix['created_at'] = datetime.utcnow()
-            matrix['updated_at'] = datetime.utcnow()
+            matrix['created_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
+            matrix['updated_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
             await achieveup_skill_matrices_collection.insert_one(matrix)
         
         # Import badges
         for badge in import_data.get('badges', []):
             badge['course_id'] = course_id
             badge['_id'] = str(uuid.uuid4())
-            badge['earned_at'] = datetime.utcnow()
+            badge['earned_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
             await achieveup_badges_collection.insert_one(badge)
         
         # Import progress
         for progress in import_data.get('skill_progress', []):
             progress['course_id'] = course_id
-            progress['last_updated'] = datetime.utcnow()
+            progress['last_updated'] = datetime.now(timezone.utc).replace(tzinfo=None)
             await achieveup_progress_collection.insert_one(progress)
         
         return {'message': 'Course data imported successfully'}
@@ -798,8 +798,8 @@ async def create_instructor_skill_matrix(token: str, course_id: str, matrix_name
             'matrix_name': matrix_name,
             'skills': skills,
             'quiz_questions': quiz_questions,
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow(),
+            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None),
             'created_by': user_id
         }
         await db['AchieveUp_Skill_Matrices'].insert_one(matrix_doc)
@@ -1170,7 +1170,7 @@ async def get_instructor_dashboard(token: str) -> dict:
             'totalCourses': len(courses),
             'totalSkillMatrices': matrices_count,
             'recentMatrices': recent_matrices,
-            'lastUpdated': datetime.utcnow().isoformat()
+            'lastUpdated': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
         return dashboard_data
@@ -1264,7 +1264,7 @@ async def get_instructor_student_analytics(token: str, course_id: str) -> dict:
             'totalStudents': len(students),
             'skillMatrix': skill_matrix,
             'studentAnalytics': student_analytics,
-            'generatedAt': datetime.utcnow().isoformat()
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
     except Exception as e:
@@ -1291,7 +1291,7 @@ async def get_instructor_student_analytics(token: str, course_id: str) -> dict:
         #    'courseId': course_data.get('courseId'),
         #    'courseName': course_data.get('courseName'),
         #    'suggestedSkills': skills,
-        #    'generatedAt': datetime.utcnow().isoformat(),
+        #    'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         #    'method': 'ai' if any('relevance' in skill and skill['relevance'] > 0.85 for skill in skills) else 'fallback'
         #}
         
@@ -1379,7 +1379,7 @@ async def suggest_course_skills_ai(token: str, course_data: dict) -> dict:
             'courseId': course_data.get('courseId'),
             'courseName': course_name,
             'skills': skills,  # Changed from 'suggestedSkills' to match frontend expectation
-            'generatedAt': datetime.utcnow().isoformat(),
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             'method': 'ai',
             'courseDescriptionSource': 'stored' if stored_description else 'request'
         }
@@ -1501,7 +1501,7 @@ async def analyze_questions_with_ai(token: str, questions: list, course_id: str,
         return {
             'totalQuestions': len(questions),
             'analyses': analysis_results,
-            'generatedAt': datetime.utcnow().isoformat(),
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             'course_id': course_id,
             'matrix_id': matrix_id,
             'matrix_used': matrix_used,
@@ -1542,8 +1542,8 @@ async def bulk_assign_skills_with_ai(token: str, course_id: str, questions: list
                     'skills': skills,
                     'ai_generated': True,
                     'human_reviewed': False,
-                    'created_at': datetime.utcnow(),
-                    'updated_at': datetime.utcnow()
+                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+                    'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
                 
                 # Upsert the assignment
@@ -1558,7 +1558,7 @@ async def bulk_assign_skills_with_ai(token: str, course_id: str, questions: list
             'assignedQuestions': len([q for q in assignments.values() if q]),
             'totalQuestions': len(questions),
             'assignments': assignments,
-            'generatedAt': datetime.utcnow().isoformat()
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
     except Exception as e:
@@ -1593,7 +1593,7 @@ async def analyze_questions_with_ai_instructor(token: str, questions: list) -> d
             'complexityDistribution': complexity_distribution,
             'averageConfidence': round(avg_confidence, 2),
             'recommendations': generate_instructor_recommendations(complexity_distribution, avg_confidence),
-            'generatedAt': datetime.utcnow().isoformat()
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
     except Exception as e:
@@ -1637,8 +1637,8 @@ async def bulk_assign_skills_with_ai_instructor(token: str, course_id: str, ques
                     'human_reviewed': False,
                     'assigned_by_instructor': True,
                     'instructor_id': user_result['user']['id'],
-                    'created_at': datetime.utcnow(),
-                    'updated_at': datetime.utcnow()
+                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+                    'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
                 
                 await achieveup_question_skills_collection.replace_one(
@@ -1667,7 +1667,7 @@ async def bulk_assign_skills_with_ai_instructor(token: str, course_id: str, ques
                 'multipleSkills': len([q for q in assignments.values() if len(q) > 1]),
                 'unassigned': len([q for q in assignments.values() if len(q) == 0])
             },
-            'generatedAt': datetime.utcnow().isoformat()
+            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
     except Exception as e:
@@ -1773,11 +1773,11 @@ async def import_matrices_from_course(source_course_id: str, target_course_id: s
                 'source_course_id': source_course_id,
                 'target_course_id': target_course_id,
                 'matrices_imported': True,
-                'updated_at': datetime.utcnow()
+                'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
             },
             '$setOnInsert': {
                 'assignments_imported': False,
-                'created_at': datetime.utcnow()
+                'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
             }
         },
         upsert=True
@@ -1954,11 +1954,11 @@ async def import_skill_setting_from_course(source_course_id: str, target_course_
                 'source_course_id': source_course_id,
                 'target_course_id': target_course_id,
                 'assignments_imported': True,
-                'updated_at': datetime.utcnow()
+                'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 },
                 '$setOnInsert': {
                 'matrices_imported': False,
-                'created_at': datetime.utcnow()
+                'created_at': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             },
             upsert=True

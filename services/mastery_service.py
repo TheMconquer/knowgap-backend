@@ -1,7 +1,7 @@
 # services/mastery_service.py
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 from services.badge_service import generate_badges_for_user
@@ -135,7 +135,7 @@ async def update_student_mastery(submission_data: dict) -> None:
                 },
                 '$set': {
                     'skill_name': skill_id,
-                    'last_updated': datetime.utcnow()
+                    'last_updated': datetime.now(timezone.utc).replace(tzinfo=None)
                 }
             }
             
