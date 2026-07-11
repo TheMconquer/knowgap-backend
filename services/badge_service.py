@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
@@ -86,7 +86,7 @@ async def generate_badges_for_user(token: str, data: dict) -> dict:
                     'badge_name': badge_name,
                     'course_id': course_id,
                     'progress_percentage': progress_percentage,
-                    'earned_at': datetime.utcnow(),
+                    'earned_at': datetime.now(timezone.utc).replace(tzinfo=None),
                     'shareable_link': f"/badges/{badge_id}/share"
                 }
                 
@@ -208,7 +208,7 @@ async def share_badge(token: str, badge_id: str, data: dict) -> dict:
             {'$set': {
                 'share_id': share_id,
                 'share_link': share_link,
-                'shared_at': datetime.utcnow(),
+                'shared_at': datetime.now(timezone.utc).replace(tzinfo=None),
                 'share_settings': data.get('settings', {})
             }},
             upsert=True
@@ -270,7 +270,7 @@ async def create_badge_for_student(user_id: str, course_id: str, skill_id: str, 
             'course_name': course_name,
             'student_name': student_name,
             'progress_percentage': progress_percentage,
-            'earned_at': datetime.utcnow(),
+            'earned_at': datetime.now(timezone.utc).replace(tzinfo=None),
             'shareable_link': f"/badges/{badge_id}/share"
         }
         
@@ -307,7 +307,7 @@ async def get_badge_progress(token: str, skill_id: str, course_id: str) -> dict:
                 'progress_percentage': 0,
                 'questions_attempted': 0,
                 'questions_correct': 0,
-                'last_updated': datetime.utcnow()
+                'last_updated': datetime.now(timezone.utc).replace(tzinfo=None)
             }
             await achieveup_badge_progress_collection.insert_one(progress)
         

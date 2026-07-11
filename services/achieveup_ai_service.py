@@ -7,7 +7,7 @@ import os
 from typing import List, Dict, Any
 from openai import AsyncOpenAI
 import openai
-from datetime import datetime
+from datetime import datetime, timezone
 from config import Config
 
 # Set up logging
@@ -209,7 +209,7 @@ async def analyze_questions(questions_data: List[Dict[str, Any]], course_skills:
             'complexity': complexity,
             'suggestedSkills': suggested_skills,
             'confidence': 0.5, # Default confidence for keyword matching
-            'analysis_timestamp': datetime.utcnow().isoformat()
+            'analysis_timestamp': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         })
 
     # 2. Batch AI processing (if enabled and needed)

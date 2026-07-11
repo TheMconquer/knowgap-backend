@@ -3,7 +3,7 @@
 import logging
 import json
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
@@ -100,7 +100,7 @@ async def update_user_progress(token: str, data: dict) -> dict:
             'questions_attempted': questions_attempted,
             'questions_correct': questions_correct,
             'progress_percentage': progress_percentage,
-            'last_updated': datetime.utcnow()
+            'last_updated': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Use upsert to create or update
@@ -137,7 +137,7 @@ async def get_progress_analytics(token: str, course_id: str = None, time_range: 
         user_id = user_result.get('user_id')
         
         # Calculate date range
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc).replace(tzinfo=None)
         if time_range == '7d':
             start_date = end_date - timedelta(days=7)
         elif time_range == '30d':
@@ -212,7 +212,7 @@ async def export_progress_data(token: str, course_id: str = None, format_type: s
             content_type = 'application/json'
         
         # Generate filename
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')
         filename = f"achieveup_progress_{user_id}_{timestamp}.{format_type}"
         
         return {
@@ -253,7 +253,7 @@ async def update_progress_analytics(user_id: str, course_id: str, skill_id: str,
         'course_id': course_id,
         'skill_id': skill_id,
         'progress_percentage': progress_percentage,
-        'timestamp': datetime.utcnow()
+        'timestamp': datetime.now(timezone.utc).replace(tzinfo=None)
     }
     
     await achieveup_progress_analytics_collection.insert_one(analytics_doc)

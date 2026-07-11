@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
@@ -51,8 +51,8 @@ async def create_skill_matrix(token: str, data: dict) -> dict:
             'name': matrix_name,
             'skills': skills,
             'created_by': user_id,
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
+            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Insert into database
@@ -123,7 +123,7 @@ async def update_skill_matrix(token: str, matrix_id: str, data: dict) -> dict:
         
         # Prepare update data
         update_data = {
-            'updated_at': datetime.utcnow()
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         if 'name' in data:
@@ -259,7 +259,7 @@ async def assign_skill_to_question(token: str, data: dict) -> dict:
             'skill_id': skill_id,
             'matrix_id': matrix_id,
             'assigned_by': user_id,
-            'assigned_at': datetime.utcnow()
+            'assigned_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         await achieveup_skill_assignments_collection.update_one(

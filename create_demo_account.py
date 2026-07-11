@@ -13,7 +13,7 @@ Usage:
 import asyncio
 import bcrypt
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 
@@ -62,10 +62,10 @@ async def create_demo_instructor():
             'role': 'instructor',
             'canvas_token_type': 'instructor',
             'canvas_api_token': encrypted_token,
-            'canvas_token_created_at': datetime.utcnow(),
-            'canvas_token_last_validated': datetime.utcnow(),
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
+            'canvas_token_created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'canvas_token_last_validated': datetime.now(timezone.utc).replace(tzinfo=None),
+            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Insert into database
