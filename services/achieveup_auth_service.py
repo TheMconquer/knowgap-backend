@@ -360,6 +360,8 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             update_data['canvas_token_created_at'] = datetime.utcnow()
             update_data['canvas_token_last_validated'] = datetime.utcnow()
             update_data['canvas_token_type'] = token_type
+            update_data["role"] = token_type
+            
         
         # Update user in database
         await achieveup_users_collection.update_one(
