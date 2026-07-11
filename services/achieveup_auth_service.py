@@ -121,10 +121,11 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
         salt = bcrypt.gensalt()
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
         
-        # Determine role based on canvas_token_type
-        role = 'instructor' if canvas_token_type == 'instructor' else 'student'
-        canvas_token_type = canvas_token_type or 'student'
-        
+        # Set default role to lowest permission role, which is student.
+        requested_token_type: str = canvas_token_type or "student"
+        role = "student"
+        canvas_token_type = "student"
+
         # Create user document
         user_id = str(uuid.uuid4())
         user_doc = {
@@ -150,7 +151,7 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
             
             # Validate token with Canvas API
             from services.achieveup_canvas_service import validate_canvas_token
-            validation_result = await validate_canvas_token(canvas_api_token, canvas_token_type)
+            validation_result = await validate_canvas_token(canvas_api_token, requested_token_type)
             
             if not validation_result['valid']:
                 return {
@@ -159,12 +160,19 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
                     'statusCode': 400
                 }
             
+            # Once validated, set the proper role and token type values.
+            role = requested_token_type
+            canvas_token_type = requested_token_type
+            user_doc["role"] = role
+            user_doc["canvas_token_type"] = role
+
             # Store the validated token (encrypted)
             from utils.encryption_utils import encrypt_token
             encrypted_token = encrypt_token(bytes.fromhex(Config.HEX_ENCRYPTION_KEY), canvas_api_token)
             user_doc['canvas_api_token'] = encrypted_token
             user_doc['canvas_token_created_at'] = datetime.utcnow()
             user_doc['canvas_token_last_validated'] = datetime.utcnow()
+
         
         # Insert user into database
         await achieveup_users_collection.insert_one(user_doc)
@@ -352,10 +360,6 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             update_data['canvas_token_created_at'] = datetime.utcnow()
             update_data['canvas_token_last_validated'] = datetime.utcnow()
             update_data['canvas_token_type'] = token_type
-        
-        # Update canvas_token_type if provided (even without new token)
-        if canvas_token_type is not None:
-            update_data['canvas_token_type'] = canvas_token_type
         
         # Update user in database
         await achieveup_users_collection.update_one(
