@@ -106,19 +106,12 @@ async def update_skill_matrix(token: str, matrix_id: str, data: dict) -> dict:
         user_id = user_result.get('user_id')
         
         # Check if matrix exists and user has permission
-        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id})
+        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id, "created_by": user_id})
         if not matrix:
             return {
                 'error': 'Matrix not found',
                 'message': 'Skill matrix not found',
                 'statusCode': 404
-            }
-        
-        if matrix.get('created_by') != user_id:
-            return {
-                'error': 'Unauthorized',
-                'message': 'You can only update your own skill matrices',
-                'statusCode': 403
             }
         
         # Prepare update data
@@ -161,21 +154,14 @@ async def delete_skill_matrix(token: str, matrix_id: str) -> dict:
         user_id = user_result.get('user_id')
         
         # Check if matrix exists and user has permission
-        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id})
+        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id, "created_by": user_id})
         if not matrix:
             return {
                 'error': 'Matrix not found',
                 'message': 'Skill matrix not found',
                 'statusCode': 404
             }
-        
-        if matrix.get('created_by') != user_id:
-            return {
-                'error': 'Unauthorized',
-                'message': 'You can only delete your own skill matrices',
-                'statusCode': 403
-            }
-        
+
         # Delete from database
         await achieveup_skill_matrices_collection.delete_one({'matrix_id': matrix_id})
         
@@ -229,19 +215,12 @@ async def assign_skill_to_question(token: str, data: dict) -> dict:
             }
         
         # Check if matrix exists and user has permission
-        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id})
+        matrix = await achieveup_skill_matrices_collection.find_one({'matrix_id': matrix_id, "created_by": user_id})
         if not matrix:
             return {
                 'error': 'Matrix not found',
                 'message': 'Skill matrix not found',
                 'statusCode': 404
-            }
-        
-        if matrix.get('created_by') != user_id:
-            return {
-                'error': 'Unauthorized',
-                'message': 'You can only assign skills to your own matrices',
-                'statusCode': 403
             }
         
         # Check if skill exists in matrix
