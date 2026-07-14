@@ -884,6 +884,13 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                         all_skill_scores[skill_name] = []
                     skill_distribution[skill_name] += 1
                     all_skill_scores[skill_name].append(0)
+
+                # Add badge info to the skills breakdown.
+                badge = highest_badges.get((student_id, skill_id))
+                if badge:
+                    skill_breakdown[skill_name]["badgeLevel"] = badge.get("badge_level")
+                    earned = badge.get("earned_at")
+                    skill_breakdown[skill_name]["badgeEarnedAt"] = earned.isoformat() if hasattr(earned, "isoformat") else earned
             
             overall_progress = round(sum(skill_scores.values()) / len(skill_scores), 1) if skill_scores else 0
             risk_level = 'low' if overall_progress >= 75 else 'medium' if overall_progress >= 50 else 'high'
