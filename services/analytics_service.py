@@ -743,6 +743,15 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
             {"user_id": 1, "skill_id": 1, "badge_level": 1, "earned_at": 1}
         ).to_list(length=None)
 
+
+        # Converting the list of class badges to a dictionary.
+        badge_tiers: dict = {"beginner": 1, "intermediate": 2, "advanced": 3, "expert": 4}
+        highest_badges: dict = {}
+        for badge in class_badge_info:
+            key = (badge.get("user_id"), badge.get("skill_id"))
+            if not highest_badges.get(key) or (badge_tiers.get(badge.get("badge_level"), 0) > badge_tiers.get(highest_badges.get(key).get("badge_level"), 0)):
+                highest_badges[key] = badge
+
         # Debug info tracking
         real_data_count = 0
         data_source = "demo" if use_demo_data else "real"
