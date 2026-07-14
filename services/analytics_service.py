@@ -20,6 +20,7 @@ db = client[Config.DATABASE]
 achieveup_course_analytics_collection = db[Config.ACHIEVEUP_COURSE_ANALYTICS_COLLECTION]
 achieveup_student_analytics_collection = db[Config.ACHIEVEUP_STUDENT_ANALYTICS_COLLECTION]
 achieveup_skill_analytics_collection = db[Config.ACHIEVEUP_SKILL_ANALYTICS_COLLECTION]
+achieveup_user_badges_collection = db[Config.ACHIEVEUP_USER_BADGES_COLLECTION]
 
 async def get_course_analytics(token: str, course_id: str, time_range: str = '30d', skill_id: str = None) -> dict:
     """Get comprehensive analytics for a course."""
@@ -736,10 +737,16 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         skill_distribution = {}
         all_skill_scores = {}
         
+        # Get all badge info for a class.
+        class_badge_info = await achieveup_user_badges_collection.find(
+            {"course_id": course_id},
+            {"user_id": 1, "skill_id": 1, "badge_level": 1, "earned_at": 1}
+        ).to_list(length=None)
+
         # Debug info tracking
         real_data_count = 0
         data_source = "demo" if use_demo_data else "real"
-        
+
         for i, student in enumerate(students):
             student_id = student.get('id')
             
