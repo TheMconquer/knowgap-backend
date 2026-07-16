@@ -27,7 +27,7 @@ def initialize_db() -> None | Exception:
 
         _db = _client[Config.DATABASE]
 
-        logger.log("MongoDB client initialized successfully.")
+        logger.info("MongoDB client initialized successfully.")
     except Exception as err:
         logger.error(f"Failed to initialize MongoDB client: {err}")
         sys.exit(69)
@@ -45,6 +45,6 @@ def close_connection() -> None | Exception:
     try:
         _client.close()
     except Exception as err:
-        return err
+        logger.error(f"Failed to close MongoDB client: {err}")
 
 initialize_db()
