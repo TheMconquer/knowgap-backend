@@ -23,7 +23,7 @@ from routes.progress_routes import progress_bp
 from routes.analytics_routes import analytics_bp
 from routes.achieveup_routes import achieveup_bp
 from routes.instructor_routes import instructor_bp
-from mongodb import get_client, get_db
+from mongodb import get_db
 
 from config import Config
 
