@@ -22,85 +22,93 @@
 4. **Caching and Storing Results**
    - Caches dynamically generated core topics and videos, reducing the need for repeated API calls or queries.
 
+## Tech Stack
+ 
+The backend is a Python application built on the **Quart** framework (an async-capable counterpart to Flask), served in production via **Hypercorn**. Data is stored in **MongoDB**. Configuration is managed through environment variables loaded via `python-dotenv`. The companion frontend is a **React/TypeScript** single-page application. The two services communicate over HTTP, with the frontend calling the backend's REST API.
+ 
+## Local Setup (Without Docker)
+ 
+If you want to run the backend directly on your machine, you may need a Python virtual environment and a `.env` file.
+ 
+Python 3.12 is recommended. Some dependencies in `requirements.txt` (notably `pydantic_core`, which relies on prebuilt wheels) may not have published wheels yet for very new Python releases such as 3.14, which will cause `pip install` to fail while trying to compile from source. If you already have a newer Python version installed, you don't need to remove it. You can just install 3.12 alongside it and point your virtual environment at that version specifically.
+ 
+To set up:
+ 
+```
+cd knowgap-backend
+py -3.12 -m venv venv
+venv\Scripts\activate      # Windows
+source venv/bin/activate   # macOS/Linux
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+ 
+On Windows, if `venv\Scripts\activate` fails in PowerShell with a "running scripts is disabled" error, this is PowerShell's default execution policy, not an issue with the project. Either run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that terminal session before activating, or activate via Command Prompt instead using `venv\Scripts\activate.bat`.
+ 
+Once the environment is set up, copy `.env.example` to `.env` and fill in real values — a full MongoDB connection string (`DB_CONNECTION_STRING`), an encryption key matching the rest of the team's if you're working against shared data, and any other required variables. Running the backend outside Docker means it will need a MongoDB instance it can actually reach — either a local install or a shared Atlas cluster.
+ 
+## Running with Docker
+ 
+Docker is the recommended way to run the full stack (backend, frontend, and MongoDB together) without needing a local database or worrying about Python version conflicts.
+ 
+**Folder structure**
+ 
+The provided `docker-compose.yml` expects `backend` and `frontend` as folders. Depending on where the compose file sits relative to those folders, its `build` and `env_file` paths may need to use `./backend` and `./frontend` (siblings in the same folder) or `../backend` and `../frontend` (compose file nested one level deeper, inside its own subfolder). Check the paths in the compose file against your actual folder layout before running it, and adjust if you get a "file not found" error pointing at the wrong location.
+ 
+**Backend `.env` for Docker**
+ 
+The MongoDB container does not support TLS, so when running via Docker, the backend `.env` needs:
+ 
+```
+DB_CONNECTION_STRING=mongodb://mongo:27017
+DB_USE_TLS=false
+```
+ 
+`mongo` here is the container's hostname on Docker's internal network, not `localhost` — it only resolves inside the Docker Compose network. TLS should still be enabled (`DB_USE_TLS=true`) on deployed/production environments, where it connects to a real MongoDB instance instead of the local container.
+ 
+**Starting the stack**
+ 
+From the folder containing `docker-compose.yml`:
+ 
+```
+docker compose up --build
+```
+ 
+Once running, the backend is reachable at `http://localhost:5001` and the frontend at `http://localhost:3000`. This is also what to point tools like Postman at when testing backend endpoints directly — the containers need to stay running for the API to respond.
+ 
+To stop everything:
+ 
+```
+docker compose down
+```
+ 
+This stops and removes the containers but preserves MongoDB data in the named `mongo_data` volume, so test data persists between sessions.
+ 
+## Troubleshooting
+ 
+**`pip install` fails to build `pydantic_core`:** This is almost always a Python version mismatch rather than a real dependency problem — see the Local Setup section above for using Python 3.12 in a dedicated virtual environment.
+ 
+**PowerShell blocks `venv\Scripts\activate`:** This is PowerShell's execution policy, unrelated to the project. Use `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` for the current session, or activate via Command Prompt instead.
+ 
+**`docker compose up` fails with a "file not found" error for `.env` or a build path:** The compose file's relative paths don't match your actual folder layout. Confirm whether `docker-compose.yml` sits alongside `backend`/`frontend` or in its own subfolder, and adjust `./` vs `../` in the compose file accordingly.
+ 
+**Docker error: "Docker Desktop is manually paused":** Resume Docker Desktop from the whale icon in the system tray, or open the Docker Desktop app directly and look for a resume option.
+ 
+**VS Code notification about "terminal environment injection is disabled":** This only affects whether `.env` values are manually injected into VS Code's integrated terminal for convenience — it has no effect on the app itself, which loads its own `.env` file via `python-dotenv` at startup. Safe to dismiss.
+
+## Backend Directory Structure
+
+The backend is organized into modular subdirectories to keep the codebase maintainable and scalable.
+
+### 1. `routes/`
+Defines the API endpoints, organized by feature area: `base_routes.py`, `auth_routes.py`, `user_routes.py`, `course_routes.py`, `video_routes.py`, `canvas_routes.py`, `skill_routes.py`, `progress_routes.py`, `badge_routes.py`, `analytics_routes.py`, `instructor_routes.py`, `support_routes.py`, `achieveup_routes.py`, and `course_utils.py`. Each route file registers its endpoints with the main app instance.
+
+### 2. `services/`
+Contains the core business logic and database interactions, separated from the routing layer. Key files include `video_service.py`, `course_service.py`, `user_service.py`, `skill_service.py`, `progress_service.py`, `badge_service.py`, `analytics_service.py`, `mastery_service.py`, `support_service.py`, and several `achieveup_*_service.py` files handling AI, auth, and Canvas-specific logic.
+
+### 3. `utils/`
+Shared helper functions: `encryption_utils.py` (token encryption/decryption), `youtube_utils.py` (YouTube API helpers), `ai_utils.py` (AI-generated core topics), `course_utils.py`, and `db_utils.py`.
+
 Current Student View          |  Current Instructor View
 :-------------------------:|:-------------------------:
 ![](https://i.ibb.co/592pv8d/image-2024-10-26-204812751.png)| ![](https://i.ibb.co/hRjdT0R/demo.png)
-
-## TODOs & Milestones
-
-### Achieved Milestones
-- [x] Integration with Canvas for Quiz and Course Data
-- [x] Student Risk Prediction Algorithm
-- [x] Curated Video Recommendation System
-- [x] Storing Video Data for Reuse
-- [x] End-to-End Flow for Fetching and Displaying Videos
-- [x] Automated Database Updates
-- [x] Token-Based Authentication & Encryption
-- [x] Endpoint to Store and Retrieve Videos by Course
-- [x] Polished UI for Video Recommendations
-- [x] Core Topic Generation for Recommending Videos
-- [x] Third Page: Mental Health Support Videos by Risk Level
-- [x] Implemented unit testing for core features
-- [x] Two-week sprint-based development cycle
-- [x] Automated "Refresh DB" feature for real-time Canvas updates
-
-### Pending Items / Future Features
-
-- [ ] **Enhancing User Experience**
-  - Provide detailed breakdowns of how the risk score is calculated.
-  - Clarify what each score means in the context of passing/failing a class (to users, both students and instructors)
-  - Allow users to give feedback on academic and mental health videos.
-  - Use feedback to improve recommendations and ensure content relevance.
-  - Enable students to save academic or mental health videos to a personal watchlist for later viewing, or remove ones they have already watched or no longer need.
-  - Allow professors to curate playlists of recommended content for their classes.
-  - Enable students to opt in to test the application further with real-life instructor data and grow user base.
-  - Collect feedback to refine features and ensure practical utility.
-  - Provide instructors with a detailed dashboard summarizing trends across multiple courses and highlighting areas of concern.
-
-- [ ] **Frontend Enhancements**
-  - Use cookies to store support content for determined period of time (i.e. 48-72 hours)
-  - Implement OAuth2 for secure and seamless authentication.
-  - Transition from cookies to a fully fleshed-out token database for better security and scalability. (Endpoint exists, need to test and call in frontend)
-  - Fix CSS scaling for student view
-  - Instead of having all course questions, have an additional drop down for course quizzes, and pull up questions to add videos based on selected course assessment
-  - Start using token-based endpoint instead of cookies
-  - Add a manual refresh button to the frontend for the database
-  - Polish the UI with new elements (including a watchlist feature)
-  - Watchlist frontend and backend development
-
-- [ ] **Backend Improvements**
-  - Automate deletion of old assessment data to handle larger datasets efficiently.
-  - Ingest and structure data to accommodate GraphQL compatibility.
-  - Explore AWS or other cloud-based deployments to scale the platform for institutional or global use.
-  - Ingest unique question formats and structures rather than processing multiple instances of similar questions with different values.
-  - Edit video URLs in UI
-  - Runtime optimization on database/endpoints
-  - Endpoint debugging
-  - Code reformatting and cleanup
-  - Optimize the decision to store 1 video per question vs. arrays
-
-- [ ] **Testing and Deployment**
-  - Implement a robust unit testing framework to ensure reliability and maintainability as the application evolves.
-  - Clean up or repopulate the database before handover
-  - Host the project on sponsor's server
-  - Finalize the documentation for project handover
-
-- [ ] **Integration and Scalability**
-  - Add Single Sign-On (SSO) integration with UCF systems
-  - Multi-LMS compatibility for Blackboard, Moodle, etc.
-  - Cross-platform data sync with tools like Google Classroom or Khan Academy
-  - Open API for third-party tool integration
-
-- [ ] **Security and Compliance**
-  - Transition to OAuth2 and a fully fleshed-out token database
-  - Ensure FERPA and GDPR compliance tools are implemented
-  - Role-based access control for granular data permissions
-  - End-to-end encryption for data security
-
-- [ ] **Gamification and Engagement**
-  - Use badges or leaderboards to encourage student engagement with recommended videos or mental health resources.
-  - Develop guided tutorials for students to learn how to use the platform effectively.
-  - Facilitate anonymous peer mentoring for students at similar risk levels
-
----
-This README reflects the latest achieved milestones and upcoming features, providing a clear roadmap for both completed and planned work. Let me know if you need any further edits or additional features to be added.
