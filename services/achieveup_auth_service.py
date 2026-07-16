@@ -5,19 +5,17 @@ import bcrypt
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 import re
+
+from mongodb import get_db
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # MongoDB setup for AchieveUp users (separate from KnowGap)
-client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-db = client[Config.DATABASE]
+db = get_db()
+
 achieveup_users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
 
 # JWT configuration
@@ -50,15 +48,8 @@ def create_jwt_token(user_id: str, email: str, role: str, canvas_token_type: str
 
 def generate_jwt_token(user_id: str) -> str:
     """Generate a new JWT token for token refresh."""
-    from motor.motor_asyncio import AsyncIOMotorClient
-    from config import Config
     
     async def get_user_info():
-        client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-        db = client[Config.DATABASE]
         users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
         user = await users_collection.find_one({'user_id': user_id})
         return user

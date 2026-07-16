@@ -1,20 +1,24 @@
 from motor.motor_asyncio import AsyncIOMotorClient
-from utils.course_utils import get_quiz_questions, get_course_name, clean_text, get_incorrect_user_ids, get_quizzes
+from utils.course_utils import get_quiz_questions, get_course_name, clean_text, get_quizzes
 from config import Config
 from utils.course_utils import (
-    get_course_name, clean_text, get_incorrect_user_ids, get_quizzes
+    get_course_name, clean_text, get_quizzes
 )
 import aiohttp
 from bs4 import BeautifulSoup
 import logging
 from datetime import datetime, timezone
-import traceback
 import json  # Add this at the top if not present
 import asyncio
 import ssl
+
+from mongodb import get_db
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
 
 # Create SSL context based on environment
 def get_ssl_context():
@@ -46,11 +50,8 @@ def create_canvas_session():
         return aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_setting))
 
 # MongoDB setup
-client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-db = client[Config.DATABASE]
+db = get_db()
+
 course_contexts_collection = db[Config.CONTEXTS_COLLECTION]
 students_collection = db[Config.STUDENTS_COLLECTION]
 quizzes_collection = db[Config.QUIZZES_COLLECTION]

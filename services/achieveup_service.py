@@ -3,12 +3,13 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
 
 import re
 from html import unescape
+
+from mongodb import get_db
 
 def normalize_quiz_title(title: str) -> str:
     if not title:
@@ -32,11 +33,7 @@ def normalize_question_text(text: str) -> str:
 logger = logging.getLogger(__name__)
 
 # MongoDB setup for AchieveUp data (separate from KnowGap)
-client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-db = client[Config.DATABASE]
+db = get_db()
 
 # Collections
 achieveup_skill_matrices_collection = db[Config.ACHIEVEUP_SKILL_MATRICES_COLLECTION]
@@ -782,11 +779,7 @@ async def create_instructor_skill_matrix(token: str, course_id: str, matrix_name
         if 'error' in user_result:
             return user_result
         user_id = user_result['user']['id']
-        client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-        db = client[Config.DATABASE]
+
         user_doc = await db['AchieveUp_Users'].find_one({'user_id': user_id})
         if not user_doc or user_doc.get('canvas_token_type', 'student') != 'instructor':
             return {'error': 'Forbidden', 'message': 'Instructor token required', 'statusCode': 403}
@@ -816,11 +809,7 @@ async def get_instructor_course_analytics(token: str, course_id: str) -> dict:
         if 'error' in user_result:
             return user_result
         user_id = user_result['user']['id']
-        client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-        db = client[Config.DATABASE]
+
         user_doc = await db['AchieveUp_Users'].find_one({'user_id': user_id})
         if not user_doc or user_doc.get('canvas_token_type', 'student') != 'instructor':
             return {'error': 'Forbidden', 'message': 'Instructor token required', 'statusCode': 403}

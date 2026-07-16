@@ -10,24 +10,22 @@ Provides real student performance data for badge generation and analytics.
 
 import aiohttp
 import asyncio
-import ssl
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL
 from config import Config
 
+from mongodb import get_db
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # MongoDB setup
-client = AsyncIOMotorClient(
-    Config.DB_CONNECTION_STRING,
-    tlsAllowInvalidCertificates=(Config.ENV == 'development')
-)
-db = client[Config.DATABASE]
+db = get_db()
+
 submissions_collection = db.get_collection('AchieveUp_Quiz_Submissions')
 
 async def check_rate_limit(response):
