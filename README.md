@@ -53,18 +53,18 @@ Docker is the recommended way to run the full stack (backend, frontend, and Mong
  
 **Folder structure**
  
-The provided `docker-compose.yml` expects `backend` and `frontend` as folders. Depending on where the compose file sits relative to those folders, its `build` and `env_file` paths may need to use `./backend` and `./frontend` (siblings in the same folder) or `../backend` and `../frontend` (compose file nested one level deeper, inside its own subfolder). Check the paths in the compose file against your actual folder layout before running it, and adjust if you get a "file not found" error pointing at the wrong location.
+The provided `docker-compose.yml` expects `backend` and `frontend` as folders. The docker-compose.yml file should be inside a Docker folder inside the parent directory of both the frontend and backend folder. Check the paths in the compose file against your actual folder layout before running it, and adjust if you get a "file not found" error pointing at the wrong location.
  
 **Backend `.env` for Docker**
  
-The MongoDB container does not support TLS, so when running via Docker, the backend `.env` needs:
+The MongoDB container does not support TLS, so when running via Docker, the ENVIRONMENT environment variable needs tobe set to development.
  
 ```
 DB_CONNECTION_STRING=mongodb://mongo:27017
-DB_USE_TLS=false
+ENVIRONMENT=development
 ```
  
-`mongo` here is the container's hostname on Docker's internal network, not `localhost` — it only resolves inside the Docker Compose network. TLS should still be enabled (`DB_USE_TLS=true`) on deployed/production environments, where it connects to a real MongoDB instance instead of the local container.
+`mongo` here is the container's hostname on Docker's internal network, not `localhost` — it only resolves inside the Docker Compose network. TLS should still be enabled on deployed/production environments, where it connects to a real MongoDB instance instead of the local container.
  
 **Starting the stack**
  
