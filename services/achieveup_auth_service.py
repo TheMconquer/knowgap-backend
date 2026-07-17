@@ -161,10 +161,9 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
                 }
             
             # Once validated, set the proper role and token type values.
-            role = requested_token_type
-            canvas_token_type = requested_token_type
+            role = canvas_token_type = requested_token_type
             user_doc["role"] = role
-            user_doc["canvas_token_type"] = role
+            user_doc["canvas_token_type"] = canvas_token_type
 
             # Store the validated token (encrypted)
             from utils.encryption_utils import encrypt_token
