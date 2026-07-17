@@ -20,6 +20,7 @@ db = client[Config.DATABASE]
 achieveup_course_analytics_collection = db[Config.ACHIEVEUP_COURSE_ANALYTICS_COLLECTION]
 achieveup_student_analytics_collection = db[Config.ACHIEVEUP_STUDENT_ANALYTICS_COLLECTION]
 achieveup_skill_analytics_collection = db[Config.ACHIEVEUP_SKILL_ANALYTICS_COLLECTION]
+achieveup_user_badges_collection = db[Config.ACHIEVEUP_USER_BADGES_COLLECTION]
 
 async def get_course_analytics(token: str, course_id: str, time_range: str = '30d', skill_id: str = None) -> dict:
     """Get comprehensive analytics for a course."""
@@ -736,10 +737,25 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         skill_distribution = {}
         all_skill_scores = {}
         
+        # Get all badge info for a class.
+        class_badge_info = await achieveup_user_badges_collection.find(
+            {"course_id": course_id},
+            {"user_id": 1, "skill_id": 1, "badge_level": 1, "earned_at": 1}
+        ).to_list(length=None)
+
+
+        # Converting the list of class badges to a dictionary.
+        badge_tiers: dict = {"beginner": 1, "intermediate": 2, "advanced": 3, "expert": 4}
+        highest_badges: dict = {}
+        for badge in class_badge_info:
+            key = (badge.get("user_id"), badge.get("skill_id"))
+            if not highest_badges.get(key) or (badge_tiers.get(badge.get("badge_level"), 0) > badge_tiers.get(highest_badges.get(key).get("badge_level"), 0)):
+                highest_badges[key] = badge
+
         # Debug info tracking
         real_data_count = 0
         data_source = "demo" if use_demo_data else "real"
-        
+
         for i, student in enumerate(students):
             student_id = student.get('id')
             
@@ -868,6 +884,13 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                         all_skill_scores[skill_name] = []
                     skill_distribution[skill_name] += 1
                     all_skill_scores[skill_name].append(0)
+
+                # Add badge info to the skills breakdown.
+                badge = highest_badges.get((student_id, skill_id))
+                if badge:
+                    skill_breakdown[skill_name]["badgeLevel"] = badge.get("badge_level")
+                    earned = badge.get("earned_at")
+                    skill_breakdown[skill_name]["badgeEarnedAt"] = earned.isoformat() if hasattr(earned, "isoformat") else earned
             
             overall_progress = round(sum(skill_scores.values()) / len(skill_scores), 1) if skill_scores else 0
             risk_level = 'low' if overall_progress >= 75 else 'medium' if overall_progress >= 50 else 'high'
