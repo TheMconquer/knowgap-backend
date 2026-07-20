@@ -7,7 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
 from openai import AsyncOpenAI
-
+import hashlib
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -198,14 +198,14 @@ async def assign_skill_to_question(token: str, data: dict) -> dict:
             return user_result
         
         user_id = user_result.get('user_id')
-        question_id = data.get('question_id')
+        question_text = data.get("question_text")
         skill_id = data.get('skill_id')
         matrix_id = data.get('matrix_id')
         
-        if not question_id or not skill_id or not matrix_id:
+        if not question_text or not skill_id or not matrix_id:
             return {
                 'error': 'Missing required fields',
-                'message': 'Question ID, skill ID, and matrix ID are required',
+                'message': 'Question text, skill ID, and matrix ID are required',
                 'statusCode': 400
             }
         
@@ -229,7 +229,7 @@ async def assign_skill_to_question(token: str, data: dict) -> dict:
         
         # Create or update assignment
         assignment_doc = {
-            'question_id': question_id,
+            'question_id': question_text,
             'skill_id': skill_id,
             'matrix_id': matrix_id,
             'assigned_by': user_id,
@@ -237,7 +237,7 @@ async def assign_skill_to_question(token: str, data: dict) -> dict:
         }
         
         await achieveup_skill_assignments_collection.update_one(
-            {'question_id': question_id, 'matrix_id': matrix_id},
+            {'question_id': question_text, 'matrix_id': matrix_id},
             {'$set': assignment_doc},
             upsert=True
         )
