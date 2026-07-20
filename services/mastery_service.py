@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 from services.badge_service import generate_badges_for_user
+from utils.text_utils import normalize_text, hash_text
 
 # Set up logging
 logger = logging.getLogger(__name__)
