@@ -1,21 +1,15 @@
 # services/video_service.py
 
-import os
-from motor.motor_asyncio import AsyncIOMotorClient
-from dotenv import load_dotenv
-from utils.youtube_utils import fetch_video_for_topic, extract_video_id, get_video_metadata
+from utils.youtube_utils import fetch_video_for_topic, get_video_metadata
 from utils.ai_utils import generate_core_topic
-from utils.db_utils import find_documents_by_field
 from config import Config
 from datetime import datetime, timezone
 
-# MongoDB async connection
-mongo_client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
+from mongodb import get_db
 
-db = mongo_client[Config.DATABASE]
+# MongoDB async connection
+db = get_db()
+
 students_collection = db[Config.STUDENTS_COLLECTION]
 quizzes_collection = db[Config.QUIZZES_COLLECTION]
 contexts_collection = db[Config.CONTEXTS_COLLECTION]

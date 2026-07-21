@@ -4,19 +4,17 @@ import logging
 import json
 import csv
 from datetime import datetime, timedelta, timezone
-from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
+
+from mongodb import get_db
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # MongoDB setup for AchieveUp progress data (separate from KnowGap)
-client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-db = client[Config.DATABASE]
+db = get_db()
+
 achieveup_user_progress_collection = db[Config.ACHIEVEUP_USER_PROGRESS_COLLECTION]
 achieveup_progress_analytics_collection = db[Config.ACHIEVEUP_PROGRESS_ANALYTICS_COLLECTION]
 

@@ -14,6 +14,8 @@ from services.achieveup_canvas_demo_service import (
 )
 from config import Config
 
+from mongodb import get_db
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -97,9 +99,8 @@ async def _fetch_all_canvas_pages(session, url: str, headers: dict, params: dict
 
 # MongoDB setup for AchieveUp Canvas data (separate from KnowGap)
 # Only bypass SSL verification in development
-mongo_tls_options = {'tlsAllowInvalidCertificates': True} if Config.ENV == 'development' else {}
-client = AsyncIOMotorClient(Config.DB_CONNECTION_STRING, **mongo_tls_options)
-db = client[Config.DATABASE]
+db = get_db()
+
 achieveup_canvas_courses_collection = db[Config.ACHIEVEUP_CANVAS_COURSES_COLLECTION]
 achieveup_canvas_quizzes_collection = db[Config.ACHIEVEUP_CANVAS_QUIZZES_COLLECTION]
 achieveup_canvas_questions_collection = db[Config.ACHIEVEUP_CANVAS_QUESTIONS_COLLECTION]

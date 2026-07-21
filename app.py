@@ -3,7 +3,6 @@ import asyncio
 import os
 from quart import Quart, request
 from quart_cors import cors
-from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from utils.encryption_utils import decrypt_token
 
@@ -24,6 +23,7 @@ from routes.progress_routes import progress_bp
 from routes.analytics_routes import analytics_bp
 from routes.achieveup_routes import achieveup_bp
 from routes.instructor_routes import instructor_bp
+from mongodb import get_db
 
 from config import Config
 
@@ -103,15 +103,8 @@ encryption_key = bytes.fromhex(HEX_ENCRYPTION_KEY)
 
 # Configure MongoDB client
 # Only bypass SSL verification in development
-client = AsyncIOMotorClient(
-    Config.DB_CONNECTION_STRING,
-    tls=(Config.ENV != 'development'),
-    tlsAllowInvalidCertificates=(Config.ENV == 'development'),
-    connectTimeoutMS=30000,
-    serverSelectionTimeoutMS=30000
-)
+db = get_db()
 
-db = client[Config.DATABASE]
 token_collection = db[Config.TOKENS_COLLECTION]
 quizzes_collection = db[Config.QUIZZES_COLLECTION]
 

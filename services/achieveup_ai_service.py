@@ -6,7 +6,6 @@ import re
 import os
 from typing import List, Dict, Any
 from openai import AsyncOpenAI
-import openai
 from datetime import datetime, timezone
 from config import Config
 

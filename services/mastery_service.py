@@ -2,19 +2,16 @@
 
 import logging
 from datetime import datetime, timezone
-from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
-from services.badge_service import generate_badges_for_user
+
+from mongodb import get_db
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # MongoDB setup
-client = AsyncIOMotorClient(
-    Config.DB_CONNECTION_STRING,
-    tlsAllowInvalidCertificates=(Config.ENV == 'development')
-)
-db = client[Config.DATABASE]
+db = get_db()
+
 mastery_collection = db[Config.ACHIEVEUP_STUDENT_SKILL_MASTERY_COLLECTION]
 question_skills_collection = db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION] # Fixed collection name
 

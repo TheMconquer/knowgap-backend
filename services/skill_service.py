@@ -3,21 +3,17 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
-from openai import AsyncOpenAI
 
+from mongodb import get_db
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # MongoDB setup for AchieveUp skill data (separate from KnowGap)
-client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-db = client[Config.DATABASE]
+db = get_db()
+
 achieveup_skill_matrices_collection = db[Config.ACHIEVEUP_SKILL_MATRICES_COLLECTION]
 achieveup_skill_assignments_collection = db[Config.ACHIEVEUP_SKILL_ASSIGNMENTS_COLLECTION]
 

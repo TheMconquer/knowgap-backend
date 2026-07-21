@@ -1,13 +1,11 @@
-from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 from utils.encryption_utils import encrypt_token, decrypt_token
 
+from mongodb import get_db
+
 # Async MongoDB connection
-client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-db = client[Config.DATABASE]
+db = get_db()
+
 tokens_collection = db[Config.TOKENS_COLLECTION]
 
 async def get_user(user_id):

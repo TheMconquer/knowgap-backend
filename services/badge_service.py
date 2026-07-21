@@ -7,15 +7,14 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
 
+from mongodb import get_db
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # MongoDB setup for AchieveUp badge data (separate from KnowGap)
-client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-db = client[Config.DATABASE]
+db = get_db()
+
 achieveup_badges_collection = db[Config.ACHIEVEUP_BADGES_COLLECTION]
 achieveup_user_badges_collection = db[Config.ACHIEVEUP_USER_BADGES_COLLECTION]
 achieveup_badge_progress_collection = db[Config.ACHIEVEUP_BADGE_PROGRESS_COLLECTION]

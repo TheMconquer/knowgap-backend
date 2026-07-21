@@ -4,19 +4,18 @@ import logging
 import json
 import statistics
 from datetime import datetime, timedelta, timezone
-from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
+import random
+
+from mongodb import get_db
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # MongoDB setup for AchieveUp analytics data (separate from KnowGap)
-client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-db = client[Config.DATABASE]
+db = get_db()
+
 achieveup_course_analytics_collection = db[Config.ACHIEVEUP_COURSE_ANALYTICS_COLLECTION]
 achieveup_student_analytics_collection = db[Config.ACHIEVEUP_STUDENT_ANALYTICS_COLLECTION]
 achieveup_skill_analytics_collection = db[Config.ACHIEVEUP_SKILL_ANALYTICS_COLLECTION]
@@ -669,17 +668,6 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return user_result
-        
-        # FIXED: Direct database collection references
-        from motor.motor_asyncio import AsyncIOMotorClient
-        from config import Config
-        import random
-        
-        client = AsyncIOMotorClient(
-        Config.DB_CONNECTION_STRING,
-        tlsAllowInvalidCertificates=(Config.ENV == 'development')
-    )
-        db = client[Config.DATABASE]
         
         # Use explicit collection names
         skill_matrices_collection = db[Config.ACHIEVEUP_SKILL_MATRICES_COLLECTION]
