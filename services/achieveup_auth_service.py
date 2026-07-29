@@ -89,7 +89,7 @@ def password_meets_requirements(password: str) -> str | None:
     return None
 
 async def achieveup_signup(name: str, email: str, password: str, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
-    """User registration with email/password and optional Canvas API token."""
+    """User registration with email/password and mandatory Canvas API token."""
     try:
         # Check if user already exists
         existing_user = await achieveup_users_collection.find_one({'email': email})
