@@ -29,10 +29,10 @@ async def achieveup_signup_route():
         canvas_api_token = data.get('canvasApiToken')
         canvas_token_type = data.get('canvasTokenType')
         
-        if not name or not email or not password:
+        if not name or not email or not password or not canvas_api_token:
             return jsonify({
                 'error': 'Missing required fields',
-                'message': 'Name, email, and password are required',
+                'message': 'Name, email, password, and canvas API token are required.',
                 'statusCode': 400
             }), 400
         
