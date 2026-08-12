@@ -278,3 +278,33 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500 
+    
+@canvas_bp.route('/canvas/test-course-students/<course_id>', methods=['GET'])
+async def test_course_students_route(course_id):
+    """Dummy route for testing get_course_students. Remove before production."""
+    try:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        canvas_token = auth_header.split(' ')[1]
+
+        from services.achieveup_canvas_service import get_course_students
+        result = await get_course_students(canvas_token, course_id)
+
+        if isinstance(result, dict) and 'error' in result:
+            return jsonify(result), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"test_course_students_route error: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500

@@ -107,6 +107,7 @@ achieveup_canvas_questions_collection = db[Config.ACHIEVEUP_CANVAS_QUESTIONS_COL
 
 # Canvas API configuration
 CANVAS_API_URL = getattr(Config, 'CANVAS_API_URL', 'https://webcourses.ucf.edu/api/v1')
+NEW_CANVAS_API_URL = getattr(Config, 'NEW_CANVAS_API_URL', '')
 
 async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'student') -> dict:
     """Validate Canvas API token by testing it with Canvas API. Supports student and instructor tokens."""
@@ -664,27 +665,45 @@ async def get_course_students(canvas_token: str, course_id: str) -> dict:
             'Content-Type': 'application/json'
         }
         
-        url = f"{CANVAS_API_URL}/courses/{course_id}/enrollments"
-        params = {
-            'type[]': 'StudentEnrollment',
-            'per_page': 100,
-            'include[]': 'user'
+        url = NEW_CANVAS_API_URL
+        jsonPayload: dict = {
+            "query": "query GetCourseStudents($courseId: ID!) { " \
+                     "course(id: $courseId) { " \
+                         "enrollmentsConnection(first: 100, filter: {types: StudentEnrollment}) { " \
+                             "nodes { " \
+                                 "state " \
+                                 "user { " \
+                                     "_id " \
+                                     "email " \
+                                     "sortableName " \
+                                     "name " \
+                                 "} " \
+                             "} " \
+                         "} " \
+                     "} " \
+                     "}",
+            "variables": {"courseId": course_id}
         }
         
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
+            async with session.post(url, headers=headers, json=jsonPayload) as response:
                 if response.status == 200:
                     enrollments_data = await response.json()
-                    
+
+                    nodes = (
+                        enrollments_data.get('data', {}).get('course', {})
+                        .get('enrollmentsConnection', {}).get('nodes', [])
+                    )
+
                     students = []
-                    for enrollment in enrollments_data:
-                        user = enrollment.get('user', {})
+                    for enrolled_student in nodes:
+                        user = enrolled_student.get("user", None) or {}
                         students.append({
-                            'id': str(user.get('id')),
-                            'name': user.get('name', ''),
-                            'email': user.get('email', ''),
-                            'sortable_name': user.get('sortable_name', ''),
-                            'enrollment_state': enrollment.get('enrollment_state', ''),
+                            "id": str(user.get("_id")),
+                            "name": user.get("name", None) or "",
+                            'email': user.get('email', None) or "",
+                            'sortable_name': user.get('sortableName', None) or "",
+                            'enrollment_state': enrolled_student.get('state', None) or "",
                             'course_id': str(course_id)
                         })
                     

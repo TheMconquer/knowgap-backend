@@ -60,6 +60,7 @@ class Config:
     # AchieveUp configuration
     ACHIEVEUP_JWT_SECRET = os.getenv("ACHIEVEUP_JWT_SECRET", "achieveup-secret-key-change-in-production")
     CANVAS_API_URL = os.getenv("CANVAS_API_URL", "https://canvas.instructure.com/api/v1")
+    NEW_CANVAS_API_URL = os.getenv("NEW_CANVAS_API_URL", "https://canvas.instructure.com/api/graphql")
     
     # Canvas API Configuration
     CANVAS_API_RATE_LIMIT = int(os.getenv("CANVAS_API_RATE_LIMIT", "100"))  # requests per minute
