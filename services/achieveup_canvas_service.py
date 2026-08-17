@@ -120,7 +120,7 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
-        
+
         # Test token by calling Canvas API /users/self endpoint
         url = f"{CANVAS_API_URL}/users/self"
         async with create_canvas_session() as session:

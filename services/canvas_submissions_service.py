@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
-from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL
+from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL, NEW_CANVAS_API_URL
 from config import Config
 
 from mongodb import get_db
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 # MongoDB setup
 db = get_db()
+
+
 
 submissions_collection = db.get_collection('AchieveUp_Quiz_Submissions')
 
@@ -66,15 +68,39 @@ async def get_student_quiz_submission(canvas_token: str, course_id: str, quiz_id
             'Content-Type': 'application/json'
         }
         
+
+
         # Get quiz submission
-        url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
+        json_payload = {
+            "query": "query GetCourseQuizSubmissions($courseId: ID!, $userId: ID!) { " \
+                    "course(id: $courseId) { " \
+                        "quizzesConnection(filter: {userId: $userId}) { " \
+                            "nodes { " \
+                                "id " \
+                                "submissionsConnection { " \
+                                    "edges { " \
+                                        "node { " \
+                                            "id " \
+                                        "} " \
+                                    "} " \
+                                "} " \
+                            "} " \
+                        "} " \
+                    "} " \
+                    "}",
+            "variables": {
+                "courseId": course_id,
+                "userId": student_id
+            }
+        }
+
         params = {
             'user_id': student_id,
             'include[]': ['submission', 'quiz', 'user']
         }
         
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
+            async with session.get(NEW_CANVAS_API_URL, headers=headers, data=json_payload) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"Canvas submission fetch error: {response.status} - {error_text}")

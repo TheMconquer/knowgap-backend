@@ -278,10 +278,12 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500 
-    
-@canvas_bp.route('/canvas/test-course-students/<course_id>', methods=['GET'])
-async def test_course_students_route(course_id):
-    """Dummy route for testing get_course_students. Remove before production."""
+
+
+## TEST ROUTES
+@canvas_bp.route('/canvas/test-quiz-submissions/<course_id>/<user_id>', methods=['GET'])
+async def test_quiz_submissions_route(course_id, quiz_id, user_id):
+    """Dummy route for testing get_course_quiz_submissions. Remove before production."""
     try:
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
@@ -293,8 +295,8 @@ async def test_course_students_route(course_id):
 
         canvas_token = auth_header.split(' ')[1]
 
-        from services.achieveup_canvas_service import get_course_students
-        result = await get_course_students(canvas_token, course_id)
+        from services.achieveup_canvas_service import get_student_quiz_submission
+        result = await get_student_quiz_submission(canvas_token, course_id, quiz_id, user_id)
 
         if isinstance(result, dict) and 'error' in result:
             return jsonify(result), result.get('statusCode', 500)
@@ -302,7 +304,7 @@ async def test_course_students_route(course_id):
         return jsonify(result), 200
 
     except Exception as e:
-        logger.error(f"test_course_students_route error: {str(e)}")
+        logger.error(f"test_quiz_submissions_route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
             'message': 'An unexpected error occurred',
