@@ -739,18 +739,14 @@ async def get_course_detailed_info(canvas_token: str, course_id: str) -> dict:
                     "term { " \
                         "endAt " \
                         "startAt " \
-                        "name " \
+                        "_id " \
                     "} " \
                     "enrollmentsConnection(filter: {states: active, types: StudentEnrollment}) { " \
                         "pageInfo { " \
                             "totalCount " \
                         "} " \
                     "} " \
-                    "dashboardCard { " \
-                        "term { " \
-                            "id " \
-                        "} " \
-                    "} " \
+                    "_id " \
                     "} " \
                     "}",
             "variables": {
@@ -762,19 +758,29 @@ async def get_course_detailed_info(canvas_token: str, course_id: str) -> dict:
             async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as response:
                 if response.status == 200:
                     course_data = await response.json()
+                    if "errors" in course_data:
+                        logger.error(f"Canvas' GraphQL API call returned an error for course_id={course_id}: {course_data['errors']}")
+                        return {
+                            "error": "Failed to fetch course details.",
+                            "message": "An error occured when attempting to communicate with Canvas' API.",
+                            "statusCode": 400
+                        }
+
                     course_data = course_data.get("data").get("course")
-                    
+
+                    course_term = course_data.get("term")
+
                     return {
-                        'id': str(course_data.get('id')),
+                        'id': str(course_data.get('_id')),
                         'name': course_data.get('name', ''),
                         'course_code': course_data.get('courseCode', ''),
                         'sis_course_id': course_data.get('sisId', ''),
                         'syllabus_body': course_data.get('syllabusBody', ''),
-                        'total_students': course_data.get('enrollmentsConnection').get("pageInfo").get("totalCount", 0),
-                        'enrollment_term_id': course_data.get('enrollment_term_id'),
+                        'total_students': (course_data.get('enrollmentsConnection').get("pageInfo") or {}).get("totalCount", 0),
+                        'enrollment_term_id': course_term.get("_id") or -1,
                         'course_image': course_data.get('imageUrl', ''),
-                        'start_at': course_data.get('start_at'),
-                        'end_at': course_data.get('end_at')
+                        'start_at': course_term.get("startAt") if course_term else None,
+                        'end_at': course_term.get("endAt") if course_term else None
                     }
                 else:
                     error_text = await response.text()
