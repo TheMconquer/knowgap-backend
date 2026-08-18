@@ -666,7 +666,7 @@ async def get_course_students(canvas_token: str, course_id: str) -> dict:
         }
         
         url = NEW_CANVAS_API_URL
-        jsonPayload: dict = {
+        json_payload: dict = {
             "query": "query GetCourseStudents($courseId: ID!) { " \
                      "course(id: $courseId) { " \
                          "enrollmentsConnection(first: 100, filter: {types: StudentEnrollment}) { " \
@@ -686,7 +686,7 @@ async def get_course_students(canvas_token: str, course_id: str) -> dict:
         }
         
         async with create_canvas_session() as session:
-            async with session.post(url, headers=headers, json=jsonPayload) as response:
+            async with session.post(url, headers=headers, json=json_payload) as response:
                 if response.status == 200:
                     enrollments_data = await response.json()
 
@@ -727,27 +727,52 @@ async def get_course_detailed_info(canvas_token: str, course_id: str) -> dict:
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
-        
-        url = f"{CANVAS_API_URL}/courses/{course_id}"
-        params = {
-            'include[]': ['syllabus_body', 'public_description', 'course_image']
+
+        json_payload = {
+            "query": "query GetCourseDetails($courseId: ID!) { " \
+                    "course(id: $courseId) { " \
+                    "name " \
+                    "courseCode " \
+                    "sisId " \
+                    "syllabusBody " \
+                    "imageUrl " \
+                    "term { " \
+                        "endAt " \
+                        "startAt " \
+                        "name " \
+                    "} " \
+                    "enrollmentsConnection(filter: {states: active, types: StudentEnrollment}) { " \
+                        "pageInfo { " \
+                            "totalCount " \
+                        "} " \
+                    "} " \
+                    "dashboardCard { " \
+                        "term { " \
+                            "id " \
+                        "} " \
+                    "} " \
+                    "} " \
+                    "}",
+            "variables": {
+                "courseId": course_id
+            }
         }
         
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
+            async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as response:
                 if response.status == 200:
                     course_data = await response.json()
+                    course_data = course_data.get("data").get("course")
                     
                     return {
                         'id': str(course_data.get('id')),
                         'name': course_data.get('name', ''),
-                        'course_code': course_data.get('course_code', ''),
-                        'sis_course_id': course_data.get('sis_course_id', ''),
-                        'syllabus_body': course_data.get('syllabus_body', ''),
-                        'public_description': course_data.get('public_description', ''),
-                        'total_students': course_data.get('total_students', 0),
+                        'course_code': course_data.get('courseCode', ''),
+                        'sis_course_id': course_data.get('sisId', ''),
+                        'syllabus_body': course_data.get('syllabusBody', ''),
+                        'total_students': course_data.get('enrollmentsConnection').get("pageInfo").get("totalCount", 0),
                         'enrollment_term_id': course_data.get('enrollment_term_id'),
-                        'course_image': course_data.get('image_download_url', ''),
+                        'course_image': course_data.get('imageUrl', ''),
                         'start_at': course_data.get('start_at'),
                         'end_at': course_data.get('end_at')
                     }
