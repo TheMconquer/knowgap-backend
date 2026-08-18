@@ -116,6 +116,18 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
         if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
             return await validate_demo_canvas_token(canvas_token, canvas_token_type)
         
+        token_check_json_payload: dict = {
+            "query": "query check {" \
+                        "user(id: \"\") {" \
+                            "enrollmentsConnection(enrollmentTypes: TeacherEnrollment) {" \
+                                "nodes {" \
+                                    "type" \
+                                "}" \
+                            "}" \
+                        "}" \
+                        "}" \
+        }
+
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -124,7 +136,7 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
         # Test token by calling Canvas API /users/self endpoint
         url = f"{CANVAS_API_URL}/users/self"
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers) as response:
+            async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as response:
                 if response.status != 200:
                     if response.status == 401:
                         return {
