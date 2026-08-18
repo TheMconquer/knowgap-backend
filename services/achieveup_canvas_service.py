@@ -116,18 +116,6 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
         if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
             return await validate_demo_canvas_token(canvas_token, canvas_token_type)
         
-        token_check_json_payload: dict = {
-            "query": "query check {" \
-                        "user(id: \"\") {" \
-                            "enrollmentsConnection(enrollmentTypes: TeacherEnrollment) {" \
-                                "nodes {" \
-                                    "type" \
-                                "}" \
-                            "}" \
-                        "}" \
-                        "}" \
-        }
-
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -136,7 +124,7 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
         # Test token by calling Canvas API /users/self endpoint
         url = f"{CANVAS_API_URL}/users/self"
         async with create_canvas_session() as session:
-            async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as response:
+            async with session.get(url, headers=headers) as response:
                 if response.status != 200:
                     if response.status == 401:
                         return {
@@ -153,15 +141,23 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
         # If instructor, check /courses endpoint for instructor permissions
         permissions = {}
         if canvas_token_type == 'instructor':
-            # Request courses with enrollment information included
-            courses_url = f"{CANVAS_API_URL}/courses"
-            params = {
-                'enrollment_type': 'teacher',  # Only get courses where user is a teacher
-                'per_page': 100,
-                'include[]': 'total_students'
+            json_payload: dict = {
+                "query": "query get_teacher_roles ($user_id: ID!) { " \
+                            "user(id: $user_id) {" \
+                            "    enrollmentsConnection(enrollmentTypes: TeacherEnrollment) {" \
+                            "    nodes {" \
+                            "        type" \
+                            "    }" \
+                            "    }" \
+                            "    _id" \
+                            "}" \
+                            "}",
+                "variables": {"user_id": user_data.get('id')}
             }
+
+            # Request courses with enrollment information included
             async with create_canvas_session() as session:
-                async with session.get(courses_url, headers=headers, params=params) as courses_response:
+                async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as courses_response:
                     if courses_response.status != 200:
                         error_text = await courses_response.text()
                         logger.error(f"Canvas instructor validation error: {courses_response.status} - {error_text}")
@@ -170,8 +166,18 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
                             'message': 'Token does not have instructor permissions. Please provide an instructor token.'
                         }
                     courses_data = await courses_response.json()
+
+                    if "errors" in courses_data:
+                        logger.error(f"Canvas' GraphQL API call returned an error for user_id={user_data.get('id')}: {courses_data['errors']}")
+                        return {
+                            "error": "Canvas API call error.",
+                            "message": "An error occured when attempting to communicate with Canvas' API.",
+                            "statusCode": 400
+                        }
+                        
+
                     # If we get any courses with enrollment_type=teacher, user is an instructor
-                    if not courses_data or len(courses_data) == 0:
+                    if not len((courses_data.get("data").get("user").get("enrollmentsConnection") or {}).get("nodes")) > 0:
                         return {
                             'valid': False,
                             'message': 'Token is valid but does not have instructor access to any courses.'
