@@ -149,7 +149,6 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
                             "        type" \
                             "    }" \
                             "    }" \
-                            "    _id" \
                             "}" \
                             "}",
                 "variables": {"user_id": user_data.get('id')}
@@ -239,15 +238,20 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
         
         # Check if user is instructor for the specified course
         user_id = user_data.get('id')
-        enrollments_url = f"{CANVAS_API_URL}/courses/{course_id}/enrollments"
-        params = {
-            'user_id': user_id,
-            'type[]': ['TeacherEnrollment', 'TaEnrollment', 'DesignerEnrollment'],
-            'state[]': 'active',
-            'per_page': 10
-        }
+        json_payload: dict = {
+                "query": "query get_teacher_roles ($user_id: ID!, $course_id: ID!) { " \
+                            "user(id: $user_id) {" \
+                                "enrollmentsConnection(enrollmentTypes: TeacherEnrollment, courseId: $course_id) {" \
+                                    "nodes {" \
+                                        "type" \
+                                    "}" \
+                                "}" \
+                            "}" \
+                            "}",
+                "variables": {"user_id": user_data.get('id'), "course_id": course_id}
+            }
         async with create_canvas_session() as session:
-            async with session.get(enrollments_url, headers=headers, params=params) as enrollments_response:
+            async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as enrollments_response:
                 if enrollments_response.status == 401:
                     return {
                         'valid': False,
@@ -267,29 +271,40 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
                     }
                 enrollments_data = await enrollments_response.json()
             
-            #check if instructor level enrollment is active
-            if not enrollments_data or len(enrollments_data) == 0:
-                return {
-                    'valid': False,
-                    'message': f'Token is valid but user does not have instructor access to course {course_id}.'
-                }
-            enrollment_type = enrollments_data[0].get('type', '')
-            logger.info(f"User {user_id} has '{enrollment_type}' enrollemt in course {course_id}")
+                if "errors" in enrollments_data:
+                    logger.error(f"Canvas' GraphQL API call returned an error for user_id={user_data.get('id')}: {enrollments_data['errors']}")
+                    return {
+                        "error": "Canvas API call error.",
+                        "message": "An error occured when attempting to communicate with Canvas' API.",
+                        "statusCode": 400
+                    }
+        
+                #check if instructor level enrollment is active
+                course_enrollment_data = (enrollments_data.get("data").get("user").get("enrollmentsConnection") or {}).get("nodes", None)
+                if not course_enrollment_data:
+                    if not course_enrollment_data[0].get("type", None):
+                        return {
+                            'valid': False,
+                            'message': f'Token is valid but user does not have instructor access to course {course_id}.'
+                        }
+                
+                enrollment_type = course_enrollment_data[0].get('type', '')
+                logger.info(f"User {user_id} has '{enrollment_type}' enrollemt in course {course_id}")
 
-            return {
-                'valid': True,
-                'message': f'Token is valid and user has instructor access to course {course_id}',
-                'user_info': {
-                    'id': user_data.get('id'),
-                    'name': user_data.get('name'),
-                    'email': user_data.get('email')
-                },
-                'permissions': {
-                    'instructor': True,
-                    'course_id': course_id,
-                    'enrollment_type': enrollment_type
+                return {
+                    'valid': True,
+                    'message': f'Token is valid and user has instructor access to course {course_id}',
+                    'user_info': {
+                        'id': user_data.get('id'),
+                        'name': user_data.get('name'),
+                        'email': user_data.get('email')
+                    },
+                    'permissions': {
+                        'instructor': True,
+                        'course_id': course_id,
+                        'enrollment_type': enrollment_type
+                    }
                 }
-            }
 
     except aiohttp.ClientError as e:
         logger.error(f"Canvas API connection error: {str(e)}")

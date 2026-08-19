@@ -281,93 +281,27 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
 
 
 ## TEST ROUTES
-@canvas_bp.route('/canvas/test-quiz-submissions/<course_id>/<quiz_id>/<user_id>', methods=['GET'])
-async def test_quiz_submissions_route(course_id, quiz_id, user_id):
-    """Dummy route for testing get_course_quiz_submissions. Remove before production."""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
+@canvas_bp.route('/api/canvas/validate-instructor-course/<course_id>', methods=['POST'])
+async def test_validate_instructor_for_course(course_id):
+    """Test route for validate_canvas_instructor_for_course."""
+    auth_header = request.headers.get('Authorization', '')
 
-        canvas_token = auth_header.split(' ')[1]
+    if not auth_header.startswith('Bearer '):
+        return {
+            'error': 'Missing or invalid Authorization header.',
+            'message': 'Expected format: Authorization: Bearer <canvas_token>'
+        }, 401
 
-        from services.achieveup_canvas_service import get_student_quiz_submission
-        result = await get_student_quiz_submission(canvas_token, course_id, quiz_id, user_id)
+    canvas_token = auth_header.split('Bearer ', 1)[1].strip()
 
-        if isinstance(result, dict) and 'error' in result:
-            return jsonify(result), result.get('statusCode', 500)
+    if not canvas_token:
+        return {
+            'error': 'Missing token.',
+            'message': 'Canvas token is empty.'
+        }, 401
 
-        return jsonify(result), 200
+    from services.achieveup_canvas_service import validate_canvas_instructor_for_course
+    result = await validate_canvas_instructor_for_course(canvas_token, course_id)
 
-    except Exception as e:
-        logger.error(f"test_quiz_submissions_route error: {str(e)}")
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
-    
-@canvas_bp.route('/canvas/test-course-details/<course_id>', methods=['GET'])
-async def test_course_details_route(course_id):
-    """Dummy route for testing get_course_detailed_info. Remove before production."""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-
-        canvas_token = auth_header.split(' ')[1]
-
-        from services.achieveup_canvas_service import get_course_detailed_info
-        result = await get_course_detailed_info(canvas_token, course_id)
-
-        if isinstance(result, dict) and 'error' in result:
-            return jsonify(result), result.get('statusCode', 500)
-
-        return jsonify(result), 200
-
-    except Exception as e:
-        logger.error(f"test_course_details_route error: {str(e)}")
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
-    
-@canvas_bp.route('/canvas/test-validate-token', methods=['GET'])
-async def test_validate_token_route():
-    """Dummy route for testing validate_canvas_token. Remove before production."""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-
-        canvas_token = auth_header.split(' ')[1]
-        canvas_token_type = request.args.get('token_type', 'student')
-
-        from services.achieveup_canvas_service import validate_canvas_token
-        result = await validate_canvas_token(canvas_token, canvas_token_type)
-
-        if isinstance(result, dict) and not result.get('valid', False):
-            return jsonify(result), 400
-
-        return jsonify(result), 200
-
-    except Exception as e:
-        logger.error(f"test_validate_token_route error: {str(e)}")
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
+    status_code = 200 if result.get('valid') else 400
+    return result, status_code
