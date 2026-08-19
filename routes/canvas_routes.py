@@ -281,9 +281,9 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
 
 
 ## TEST ROUTES
-@canvas_bp.route('/api/canvas/validate-instructor-course/<course_id>', methods=['POST'])
-async def test_validate_instructor_for_course(course_id):
-    """Test route for validate_canvas_instructor_for_course."""
+@canvas_bp.route('/test/canvas/instructor/courses/<course_id>/quizzes', methods=['GET'])
+async def route_get_instructor_course_quizzes(course_id):
+    """Get all quizzes in a course for an instructor."""
     auth_header = request.headers.get('Authorization', '')
 
     if not auth_header.startswith('Bearer '):
@@ -300,8 +300,11 @@ async def test_validate_instructor_for_course(course_id):
             'message': 'Canvas token is empty.'
         }, 401
 
-    from services.achieveup_canvas_service import validate_canvas_instructor_for_course
-    result = await validate_canvas_instructor_for_course(canvas_token, course_id)
+    from services.achieveup_canvas_service import get_instructor_course_quizzes
+    result = await get_instructor_course_quizzes(canvas_token, course_id)
 
-    status_code = 200 if result.get('valid') else 400
+    if isinstance(result, list):
+        return {'quizzes': result}, 200
+
+    status_code = result.get('statusCode', 400)
     return result, status_code
