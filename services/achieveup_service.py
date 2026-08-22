@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
-
+from utils import text_utils
 import re
 from html import unescape
 
@@ -344,19 +344,20 @@ async def assign_skills_to_questions(token: str, course_id: str, question_skills
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return user_result
-        
-        # Store question-skill assignments
-        for question_id, skills in question_skills.items():
+
+        for question_text, skills in question_skills.items():
+            normalized = text_utils.normalize_text(question_text)
+            question_hash = text_utils.hash_text(normalized)
+
             assignment_doc = {
-                'question_id': question_id,
+                'question_id': question_hash,
                 'course_id': course_id,
                 'skills': skills,
                 'assigned_at': datetime.now(timezone.utc).replace(tzinfo=None)
             }
-            
-            # Upsert assignment
+
             await achieveup_question_skills_collection.update_one(
-                {'question_id': question_id, 'course_id': course_id},
+                {'question_id': question_hash, 'course_id': course_id},
                 {'$set': assignment_doc},
                 upsert=True
             )
@@ -383,14 +384,45 @@ async def get_assigned_skills(token: str, course_id: str, question_ids:list[str]
                     }
 
 
-        # Find skills
-        cursor = achieveup_question_skills_collection.find( {'course_id': course_id, 'question_id': {'$in': question_ids}},
-            {'_id': 0})
-        
+        # Hash all passed through question texts so we can compare with hashes stored in db
+        hash_to_text = {}
+        for text in question_ids:
+            normalized = text_utils.normalize_text(text)
+            hash= text_utils.hash_text(normalized)
+            hash_to_text[hash] = text
+
+        # Get list of all hashed text
+        hashes = list(hash_to_text.keys())
+
+        # Start by looking only in this course
+        cursor = achieveup_question_skills_collection.find(
+            {'course_id': course_id, 'question_id': {'$in': hashes}},
+            {'_id': 0}
+        )
         docs = await cursor.to_list(length=None)
+
+        found_hashes = {doc['question_id'] for doc in docs}
+        missing_hashes = [hash for hash in hashes if hash not in found_hashes]
+
+        # If any missing hashes, we didnt find a match, so look outside of just this course
+        if missing_hashes:
+            fallback_cursor = achieveup_question_skills_collection.find(
+                {'question_id': {'$in': missing_hashes}},
+                {'_id': 0}
+            )
+            fallback_docs = await fallback_cursor.to_list(length=None)
+            docs.extend(fallback_docs)
+
+        # Key results back to original question text for the frontend
+        question_skills = {}
+        for doc in docs:
+            original_text = hash_to_text.get(doc['question_id'])
+            if original_text:
+                question_skills[original_text] = doc.get('skills', [])
+
         return {
             'course_id': course_id,
-            'question_skills': {str(d['question_id']): d.get('skills', []) for d in docs}
+            'question_skills': question_skills
         }
 
     except Exception as e:
