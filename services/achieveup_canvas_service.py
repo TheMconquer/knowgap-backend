@@ -8,8 +8,7 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_canvas_demo_service import (
-    is_demo_token, get_demo_instructor_courses, get_demo_course_details,
-    get_demo_course_quizzes, get_demo_quiz_questions, get_demo_course_students,
+    is_demo_token, get_demo_instructor_courses, get_demo_course_students,
     validate_demo_canvas_token
 )
 from config import Config
@@ -107,7 +106,7 @@ achieveup_canvas_questions_collection = db[Config.ACHIEVEUP_CANVAS_QUESTIONS_COL
 
 # Canvas API configuration
 CANVAS_API_URL = getattr(Config, 'CANVAS_API_URL', 'https://webcourses.ucf.edu/api/v1')
-NEW_CANVAS_API_URL = getattr(Config, 'NEW_CANVAS_API_URL', '')
+NEW_CANVAS_API_URL = Config.NEW_CANVAS_API_URL
 
 async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'student') -> dict:
     """Validate Canvas API token by testing it with Canvas API. Supports student and instructor tokens."""

@@ -67,7 +67,7 @@ def get_incorrect_user_ids(question, no_answer_set, answer_set):
     return incorrect_user_ids if incorrect_user_ids else [-1]
 def extract_no_answer_user_ids(answers):
     """Helper to gather user IDs from questions without answer sets."""
-    return [user_id for answer in answers if not answer["correct"]
+    return [user_id for ans1wer in answers if not answer["correct"]
             for user_id in (answer.get("user_ids") or [-1])]
 def extract_answer_set_user_ids(answer_sets):
     """Helper to gather user IDs from questions with answer sets."""

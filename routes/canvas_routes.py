@@ -278,3 +278,39 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500 
+    
+## Test Routes
+from services.course_service import get_student_profile
+
+@canvas_bp.route('/canvas/test/student-profile', methods=['GET'])
+async def test_student_profile_route():
+    """Test route for get_student_profile(). (Temporary - for manual testing)"""
+    try:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        access_token = auth_header.split(' ')[1]
+        canvas_domain = request.args.get('canvas_domain')
+
+        profile = await get_student_profile(access_token, canvas_domain)
+
+        if profile is None:
+            return jsonify({
+                'error': 'Failed to fetch profile',
+                'message': 'Check server logs for details',
+                'statusCode': 502
+            }), 502
+
+        return jsonify(profile), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': str(e),
+            'statusCode': 500
+        }), 500

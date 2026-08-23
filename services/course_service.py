@@ -600,14 +600,13 @@ async def get_student_grade(course_id, user_id, access_token, canvas_domain):
         return None
 
 async def get_student_profile(access_token, canvas_domain):
-    """Fetches the Canvas user profile using the /api/v1/users/self endpoint."""
-    # Sanitize the canvas_domain to remove protocol if present
-    canvas_domain = canvas_domain.replace("https://", "").replace("http://", "")
-    url = f"https://{canvas_domain}/api/v1/users/self"
+    """Fetches the Canvas user profile."""
+
+    # Call the Canvas API and then parse the response.
     headers = {'Authorization': f'Bearer {access_token}'}
     try:
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(f"{Config.CANVAS_API_URL}/users/self", headers=headers) as response:
                 resp_text = await response.text()
                 if response.status != 200:
                     logger.error(f"Failed to fetch user profile: {response.status}")
