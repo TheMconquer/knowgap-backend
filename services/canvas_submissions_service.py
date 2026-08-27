@@ -16,6 +16,7 @@ from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL
+from services.skill_tiers import tier_for_score
 from config import Config
 
 from mongodb import get_db
@@ -543,12 +544,7 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                 total_attempted = doc.get('total_attempted', 0)
                 percentage = doc.get('mastery_percentage', 0)
 
-                if percentage >= 80:
-                    level = 'advanced'
-                elif percentage >= 60:
-                    level = 'intermediate'
-                else:
-                    level = 'beginner'
+                level = tier_for_score(percentage)
 
                 student_mastery[sid][skill_id] = {
                     'score': round(percentage, 1),
