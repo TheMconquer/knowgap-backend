@@ -934,9 +934,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                 }
             }
         }
-        
-        client.close()
-        
+
         return response
         
     except Exception as e:
