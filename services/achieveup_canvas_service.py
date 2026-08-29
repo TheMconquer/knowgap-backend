@@ -593,16 +593,38 @@ async def get_instructor_course_quizzes(canvas_token: str, course_id: str) -> di
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
-        url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes"
-        params = {'per_page': 100}
+
+        json_payload: dict = {
+            "query": "query get_course_quizzes ($course_id: ID!) {" \
+                        "course(id: $course_id) {" \
+                            "quizzesConnection(first: 100) {" \
+                            "nodes {" \
+                                "title," \
+                                "_id" \
+                            "}" \
+                            "}" \
+                        "}" \
+                        "}",
+            "variables": {"course_id": course_id}
+        }
+
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
+            async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as response:
                 if response.status == 200:
                     quizzes_data = await response.json()
+
+                    if "errors" in quizzes_data:
+                        logger.error(f"Canvas' GraphQL API call returned an error: {quizzes_data['errors']}")
+                        return {
+                            "error": "Canvas API call error.",
+                            "message": "An error occured when attempting to communicate with Canvas' API.",
+                            "statusCode": 400
+                        }
+
                     quizzes = []
-                    for quiz in quizzes_data:
+                    for quiz in quizzes_data.get("data").get("course", {}).get("quizzesConnection", {}).get("nodes"):
                         quizzes.append({
-                            'id': str(quiz.get('id')),
+                            'id': str(quiz.get('_id')),
                             'title': quiz.get('title', ''),
                             'course_id': str(course_id)
                         })
