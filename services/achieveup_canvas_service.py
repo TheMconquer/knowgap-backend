@@ -630,7 +630,16 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
+
+        json_payload: dict = {
+            "query": "query is_new_quiz ($quiz_id: ID!) {"
+            "assignment(id: )"        
+            "}",
+            "variables": {}
+        }
+
         url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/questions"
+        new_quizzes_url: str = f"https://webcourses.ucf.edu/api/quiz/v1/courses/{course_id}/quizzes/{quiz_id}/items"
         params = {'per_page': 100}
         async with create_canvas_session() as session:
             async with session.get(url, headers=headers, params=params) as response:
@@ -645,9 +654,26 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                         })
                     return questions
                 else:
-                    error_text = await response.text()
-                    logger.error(f"Canvas instructor quiz questions error: {response.status} - {error_text}")
-                    return {'error': f'Failed to fetch instructor quiz questions: {response}', 'statusCode': response.status}
+                    async with session.get(new_quizzes_url, headers=headers, params=params) as res:
+                        if res.status == 200:
+                            questions_data = await res.json()
+
+                            
+                            if "errors" in questions_data:
+                                logger.error(f"Canvas instructor quiz questions error: {questions_data.get('errors')}")
+                                return {'error': f'Failed to fetch instructor quiz questions.', 'statusCode': response.status}
+
+                            return (
+                            [
+                                {
+                                    "id": question.get("id"),
+                                    "question_text": (question.get("entry") or {}).get("item_body"),
+                                    "quiz_id": str(quiz_id)
+                                } for question in questions_data
+                            ])
+
+                logger.error(f"Canvas failed to fetch instructor quiz questions for course_id: {course_id}, quiz_id: {quiz_id}")
+                return {'error': f'Failed to fetch instructor quiz questions', 'statusCode': 502}
     except Exception as e:
         logger.error(f"Get instructor quiz questions error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
