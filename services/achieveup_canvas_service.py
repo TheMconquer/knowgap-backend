@@ -632,19 +632,15 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
             'Content-Type': 'application/json'
         }
 
-        json_payload: dict = {
-            "query": "query is_new_quiz ($quiz_id: ID!) {"
-            "assignment(id: )"        
-            "}",
-            "variables": {}
-        }
-
         url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/questions"
         new_quizzes_url: str = f"https://webcourses.ucf.edu/api/quiz/v1/courses/{course_id}/quizzes/{quiz_id}/items"
         params = {'per_page': 100}
         async with create_canvas_session() as session:
+
             match await is_new_quiz(canvas_token, course_id, quiz_id):
-                case True:
+
+                # Classic quiz logic.
+                case False:
                     async with session.get(url, headers=headers, params=params) as response:
                         if response.status == 200:
                             questions_data = await response.json()
@@ -656,12 +652,14 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                     'quiz_id': str(quiz_id)
                                 })
                             return questions
-                case False:
+                
+                # New quiz logic.
+                case True:
                     async with session.get(new_quizzes_url, headers=headers, params=params) as res:
                         if res.status == 200:
                             questions_data = await res.json()
 
-                            
+                            # Check for errors.
                             if "errors" in questions_data:
                                 logger.error(f"Canvas instructor quiz questions error: {questions_data.get('errors')}")
                                 return {'error': f'Failed to fetch instructor quiz questions.', 'statusCode': response.status}
@@ -674,6 +672,8 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                     "quiz_id": str(quiz_id)
                                 } for question in questions_data
                             ])
+                        
+                # Could not find quiz.
                 case None:
                     logger.error(f"Failed to determine quiz type: {course_id}, quiz_id: {quiz_id}")
                     return {'error': f'Failed to determine instructor quiz type.', 'statusCode': 404}
