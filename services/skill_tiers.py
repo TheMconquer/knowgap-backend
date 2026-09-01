@@ -1,12 +1,5 @@
 # services/skill_tiers.py
-"""Single source of truth for turning a mastery percentage into a tier label.
 
-Badge creation (badge_service.generate_badges_for_user), badge-level lookups
-(badge_service.get_current_badge_level), and the student progress summary
-(canvas_submissions_service's Progress-collection rebuild) all need this same
-mapping. Previously each computed it independently with different cutoffs,
-which made the same percentage show different tier language across screens.
-"""
 
 TIER_THRESHOLDS = (
     (90, 'expert'),
@@ -25,3 +18,8 @@ def tier_for_score(percentage: float) -> str:
         if percentage >= threshold:
             return label
     return 'none'
+
+
+def is_mastered(percentage: float) -> bool:
+
+    return tier_for_score(percentage) not in ('none', 'beginner')

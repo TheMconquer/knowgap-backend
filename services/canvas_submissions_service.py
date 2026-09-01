@@ -12,6 +12,7 @@ import aiohttp
 import asyncio
 import logging
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
@@ -23,6 +24,27 @@ from mongodb import get_db
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+
+class _TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.chunks = []
+
+    def handle_data(self, data):
+        self.chunks.append(data)
+
+
+def extract_text_from_html(html_string: Optional[str]) -> str:
+    """Strip HTML tags from a Canvas question_text, mirroring the frontend's
+    div.textContent extraction (SkillAssignmentInterface.tsx's
+    extractTextFromHTML) so submission questions match the question-text
+    keys stored in AchieveUp_Question_Skills at skill-assignment time."""
+    if not html_string:
+        return ''
+    parser = _TextExtractor()
+    parser.feed(html_string)
+    return ''.join(parser.chunks)
 
 # MongoDB setup
 db = get_db()
@@ -220,7 +242,12 @@ async def process_submission_data(submission: dict) -> dict:
         # Process individual questions
         for question in submission.get('questions', []):
             question_data = {
-                'question_id': str(question.get('id')),
+                # question_id is the extracted question TEXT, not Canvas's
+                # numeric id — AchieveUp_Question_Skills keys skill
+                # assignments by question text (see SkillAssignmentInterface),
+                # so mastery lookups need the same key.
+                'question_id': extract_text_from_html(question.get('question_text')),
+                'canvas_question_id': str(question.get('id')),
                 'question_type': question.get('question_type'),
                 'points': question.get('points', 0),
                 'points_possible': question.get('points_possible', 0),
