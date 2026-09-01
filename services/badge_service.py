@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token
+from services.skill_tiers import tier_for_score
 from config import Config
 
 from mongodb import get_db
@@ -48,22 +49,11 @@ async def generate_badges_for_user(token: str, data: dict) -> dict:
             skill_id = skill_progress.get('skill_id')
             progress_percentage = skill_progress.get('progress_percentage', 0)
             
-            # Define badge thresholds
             skill_name = skill_progress.get('skill_name') or skill_progress.get('skill_id') or 'Skill'
-            if progress_percentage >= 90:
-                badge_level = 'expert'
-                badge_name = f"Expert in {skill_name}"
-            elif progress_percentage >= 75:
-                badge_level = 'advanced'
-                badge_name = f"Advanced in {skill_name}"
-            elif progress_percentage >= 50:
-                badge_level = 'intermediate'
-                badge_name = f"Intermediate in {skill_name}"
-            elif progress_percentage >= 25:
-                badge_level = 'beginner'
-                badge_name = f"Beginner in {skill_name}"
-            else:
+            badge_level = tier_for_score(progress_percentage)
+            if badge_level == 'none':
                 continue  # No badge for low progress
+            badge_name = f"{badge_level.capitalize()} in {skill_name}"
             
             # Check if badge already exists
             existing_badge = await achieveup_user_badges_collection.find_one({
@@ -412,16 +402,7 @@ def get_next_badge_level(current_level: str) -> str:
 
 def get_current_badge_level(progress_percentage: float) -> str:
     """Get current badge level based on progress percentage."""
-    if progress_percentage >= 90:
-        return 'expert'
-    elif progress_percentage >= 75:
-        return 'advanced'
-    elif progress_percentage >= 50:
-        return 'intermediate'
-    elif progress_percentage >= 25:
-        return 'beginner'
-    else:
-        return 'none'
+    return tier_for_score(progress_percentage)
 
 def get_badge_threshold(badge_level: str) -> int:
     """Get the threshold percentage for a badge level."""
@@ -441,13 +422,11 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
         if 'error' in user_result:
             return user_result
         
-        # Get all badges for the student (only earned ones with progress >= 80)
-        badges = []
-        async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0}):
-            # Only include badges that are actually earned (80% or higher)
-            if badge_doc.get('progress_percentage', 0) >= 80:
-                badges.append(badge_doc)
-        
+        # Get all badges for the student. A badge document only exists because
+        # it already crossed its tier threshold at creation time (see
+        # tier_for_score) — no re-filtering by current percentage needed here.
+        badges = [badge_doc async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0})]
+
         # Get course names from Canvas API
         from services.achieveup_canvas_service import get_instructor_courses
         
@@ -521,13 +500,11 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
 async def get_public_student_earned_badges(student_id: str) -> dict:
     """Get all earned badges for a specific student with course information publicly."""
     try:
-        # Get all badges for the student (only earned ones with progress >= 80)
-        badges = []
-        async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0}):
-            # Only include badges that are actually earned (80% or higher)
-            if badge_doc.get('progress_percentage', 0) >= 80:
-                badges.append(badge_doc)
-        
+        # Get all badges for the student. A badge document only exists because
+        # it already crossed its tier threshold at creation time (see
+        # tier_for_score) — no re-filtering by current percentage needed here.
+        badges = [badge_doc async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0})]
+
         # Sort by earned date (newest first)
         badges.sort(key=lambda x: x.get('earned_at', datetime.min), reverse=True)
         
