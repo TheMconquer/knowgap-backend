@@ -639,24 +639,24 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
             "variables": {}
         }
 
-        await is_new_quiz(canvas_token, course_id, quiz_id)
-
         url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/questions"
         new_quizzes_url: str = f"https://webcourses.ucf.edu/api/quiz/v1/courses/{course_id}/quizzes/{quiz_id}/items"
         params = {'per_page': 100}
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
-                if response.status == 200:
-                    questions_data = await response.json()
-                    questions = []
-                    for question in questions_data:
-                        questions.append({
-                            'id': str(question.get('id')),
-                            'question_text': question.get('question_text', ''),
-                            'quiz_id': str(quiz_id)
-                        })
-                    return questions
-                else:
+            match await is_new_quiz(canvas_token, course_id, quiz_id):
+                case True:
+                    async with session.get(url, headers=headers, params=params) as response:
+                        if response.status == 200:
+                            questions_data = await response.json()
+                            questions = []
+                            for question in questions_data:
+                                questions.append({
+                                    'id': str(question.get('id')),
+                                    'question_text': question.get('question_text', ''),
+                                    'quiz_id': str(quiz_id)
+                                })
+                            return questions
+                case False:
                     async with session.get(new_quizzes_url, headers=headers, params=params) as res:
                         if res.status == 200:
                             questions_data = await res.json()
@@ -674,9 +674,9 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                     "quiz_id": str(quiz_id)
                                 } for question in questions_data
                             ])
-
-                logger.error(f"Canvas failed to fetch instructor quiz questions for course_id: {course_id}, quiz_id: {quiz_id}")
-                return {'error': f'Failed to fetch instructor quiz questions', 'statusCode': 502}
+                case None:
+                    logger.error(f"Failed to determine quiz type: {course_id}, quiz_id: {quiz_id}")
+                    return {'error': f'Failed to determine instructor quiz type.', 'statusCode': 404}
     except Exception as e:
         logger.error(f"Get instructor quiz questions error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
