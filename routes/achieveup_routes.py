@@ -1099,35 +1099,6 @@ async def instructor_students_route(course_id):
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
 
-@achieveup_bp.route('/achieveup/instructor/course/<course_id>/student-analytics', methods=['GET'])
-async def instructor_student_analytics_route(course_id):
-    """Get student analytics for instructor's course (instructor only)."""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing token', 'message': 'Authorization header with Bearer token is required', 'statusCode': 401}), 401
-        token = auth_header.split(' ')[1]
-        from services.achieveup_auth_service import achieveup_verify_token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return jsonify({'error': user_result['error'], 'message': user_result['error'], 'statusCode': user_result['statusCode']}), user_result['statusCode']
-        user_id = user_result['user']['id']
-        from motor.motor_asyncio import AsyncIOMotorClient
-        from config import Config
-        client = AsyncIOMotorClient(
-            Config.DB_CONNECTION_STRING,
-            tlsAllowInvalidCertificates=(Config.ENV == 'development')
-        )
-        db = client[Config.DATABASE]
-        user_doc = await db[Config.ACHIEVEUP_USERS_COLLECTION].find_one({'user_id': user_id})
-        if not user_doc or user_doc.get('canvas_token_type', 'student') != 'instructor':
-            return jsonify({'error': 'Forbidden', 'message': 'Instructor token required', 'statusCode': 403}), 403
-        from services.achieveup_service import get_instructor_student_analytics
-        result = await get_instructor_student_analytics(token, course_id)
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
- 
 @achieveup_bp.route('/ai/analyze-questions', methods=['POST'])
 async def ai_analyze_questions_route():
     """Analyze question complexity and suggest skills using AI. (AchieveUp only)"""
@@ -1482,77 +1453,6 @@ async def achieveup_ai_bulk_assign_route():
             'statusCode': 500
         }), 500
 
-@achieveup_bp.route('/instructor/analyze-questions-with-ai', methods=['POST'])
-async def instructor_analyze_questions_with_ai_route():
-    """Analyze questions with AI for instructors. (AchieveUp only)"""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing token', 'message': 'Authorization header with Bearer token is required', 'statusCode': 401}), 401
-        token = auth_header.split(' ')[1]
-        from services.achieveup_auth_service import achieveup_verify_token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return jsonify({'error': user_result['error'], 'message': user_result['error'], 'statusCode': user_result['statusCode']}), user_result['statusCode']
-        user_id = user_result['user']['id']
-        from motor.motor_asyncio import AsyncIOMotorClient
-        from config import Config
-        client = AsyncIOMotorClient(
-            Config.DB_CONNECTION_STRING,
-            tlsAllowInvalidCertificates=(Config.ENV == 'development')
-        )
-        db = client[Config.DATABASE]
-        user_doc = await db[Config.ACHIEVEUP_USERS_COLLECTION].find_one({'user_id': user_id})
-        if not user_doc or user_doc.get('canvas_token_type', 'student') != 'instructor':
-            return jsonify({'error': 'Forbidden', 'message': 'Instructor token required', 'statusCode': 403}), 403
-        data = await request.get_json()
-        if not data:
-            return jsonify({'error': 'Invalid request', 'message': 'Request body is required', 'statusCode': 400}), 400
-        questions = data.get('questions', [])
-        if not questions:
-            return jsonify({'error': 'Missing required fields', 'message': 'Questions array is required', 'statusCode': 400}), 400
-        from services.achieveup_service import analyze_questions_with_ai_instructor
-        result = await analyze_questions_with_ai_instructor(token, questions)
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
-
-@achieveup_bp.route('/instructor/bulk-assign-skills-with-ai', methods=['POST'])
-async def instructor_bulk_assign_skills_with_ai_route():
-    """Bulk assign skills with AI for instructors. (AchieveUp only)"""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing token', 'message': 'Authorization header with Bearer token is required', 'statusCode': 401}), 401
-        token = auth_header.split(' ')[1]
-        from services.achieveup_auth_service import achieveup_verify_token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return jsonify({'error': user_result['error'], 'message': user_result['error'], 'statusCode': user_result['statusCode']}), user_result['statusCode']
-        user_id = user_result['user']['id']
-        from motor.motor_asyncio import AsyncIOMotorClient
-        from config import Config
-        client = AsyncIOMotorClient(
-            Config.DB_CONNECTION_STRING,
-            tlsAllowInvalidCertificates=(Config.ENV == 'development')
-        )
-        db = client[Config.DATABASE]
-        user_doc = await db[Config.ACHIEVEUP_USERS_COLLECTION].find_one({'user_id': user_id})
-        if not user_doc or user_doc.get('canvas_token_type', 'student') != 'instructor':
-            return jsonify({'error': 'Forbidden', 'message': 'Instructor token required', 'statusCode': 403}), 403
-        data = await request.get_json()
-        if not data:
-            return jsonify({'error': 'Invalid request', 'message': 'Request body is required', 'statusCode': 400}), 400
-        course_id = data.get('course_id')
-        questions = data.get('questions', [])
-        if not course_id or not questions:
-            return jsonify({'error': 'Missing required fields', 'message': 'Course ID and questions array are required', 'statusCode': 400}), 400
-        from services.achieveup_service import bulk_assign_skills_with_ai_instructor
-        result = await bulk_assign_skills_with_ai_instructor(token, course_id, questions)
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
- 
 @achieveup_bp.route('/achieveup/progress/<student_id>', methods=['GET'])
 async def get_student_progress_simple_route(student_id):
     """Get student progress (frontend-requested endpoint). (AchieveUp only)"""
