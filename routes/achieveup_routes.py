@@ -5,7 +5,6 @@ from services.achieveup_service import (
     update_skill_matrix,
     get_skill_matrix,
     assign_skills_to_questions,
-    suggest_skills_for_question,
     generate_badges_for_student,
     get_student_badges,
     get_student_progress,
@@ -13,8 +12,6 @@ from services.achieveup_service import (
     get_individual_analytics,
     export_course_data,
     import_course_data,
-    analyze_questions,
-    get_question_suggestions,
     get_all_skill_matrices_by_course,
     get_assigned_skills,
     delete_skill_matrix,  # Add new import
@@ -376,60 +373,6 @@ async def get_assigned_skills_route():
 
 
 
-
-@achieveup_bp.route('/achieveup/skills/suggest', methods=['POST'])
-async def suggest_skills_for_question_route():
-    """Suggest skills for a quiz question using AI. (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        data = await request.get_json()
-        
-        if not data:
-            return jsonify({
-                'error': 'Invalid request',
-                'message': 'Request body is required',
-                'statusCode': 400
-            }), 400
-        
-        question_text = data.get('question_text')
-        course_context = data.get('course_context')
-        course_id = data.get('course_id')
-        matrix_id = data.get('matrix_id')
-        
-        if not question_text:
-            return jsonify({
-                'error': 'Missing required fields',
-                'message': 'Question text is required',
-                'statusCode': 400
-            }), 400
-        
-        # Call service with new parameters
-        result = await suggest_skills_for_question(token, question_text, course_id, matrix_id, course_context)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
 
 @achieveup_bp.route('/achieveup/badges/generate', methods=['POST'])
 async def generate_badges_for_student_route():
@@ -954,93 +897,6 @@ async def instructor_force_sync_route(course_id):
             'statusCode': 500
         }), 500
 
-@achieveup_bp.route('/achieveup/questions/analyze', methods=['POST'])
-async def analyze_questions_route():
-    """Analyze question complexity and suggest skills. (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        data = await request.get_json()
-        
-        if not data:
-            return jsonify({
-                'error': 'Invalid request',
-                'message': 'Request body is required',
-                'statusCode': 400
-            }), 400
-        
-        questions = data.get('questions', [])
-        course_id = data.get('course_id')
-        matrix_id = data.get('matrix_id')
-        
-        if not questions:
-            return jsonify({
-                'error': 'Missing required fields',
-                'message': 'Questions array is required',
-                'statusCode': 400
-            }), 400
-        
-        # Call service with course_id and matrix_id
-        result = await analyze_questions(token, questions, course_id, matrix_id)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
-
-@achieveup_bp.route('/achieveup/questions/<question_id>/suggestions', methods=['GET'])
-async def get_question_suggestions_route(question_id):
-    """Get AI-powered skill suggestions for specific question. (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        
-        # Call service
-        result = await get_question_suggestions(token, question_id)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
-
 @achieveup_bp.route('/achieveup/instructor/dashboard', methods=['GET'])
 async def instructor_dashboard_route():
     """Get instructor dashboard data (instructor only)."""
@@ -1098,109 +954,6 @@ async def instructor_students_route(course_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
-
-@achieveup_bp.route('/ai/analyze-questions', methods=['POST'])
-async def ai_analyze_questions_route():
-    """Analyze question complexity and suggest skills using AI. (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        data = await request.get_json()
-        
-        if not data:
-            return jsonify({
-                'error': 'Invalid request',
-                'message': 'Request body is required',
-                'statusCode': 400
-            }), 400
-        
-        questions = data.get('questions', [])
-        
-        if not questions:
-            return jsonify({
-                'error': 'Missing required fields',
-                'message': 'Questions array is required',
-                'statusCode': 400
-            }), 400
-        
-        # Call service
-        result = await analyze_questions(token, questions)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
-
-@achieveup_bp.route('/ai/suggest-skills', methods=['POST'])
-async def ai_suggest_skills_route():
-    """Suggest skills for questions using AI. (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        data = await request.get_json()
-        
-        if not data:
-            return jsonify({
-                'error': 'Invalid request',
-                'message': 'Request body is required',
-                'statusCode': 400
-            }), 400
-        
-        question_text = data.get('question_text')
-        course_context = data.get('course_context')
-        
-        if not question_text:
-            return jsonify({
-                'error': 'Missing required fields',
-                'message': 'Question text is required',
-                'statusCode': 400
-            }), 400
-        
-        # Call service
-        result = await suggest_skills_for_question(token, question_text, course_context)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
 
 @achieveup_bp.route('/achieveup/ai/suggest-skills', methods=['POST'])
 async def achieveup_ai_suggest_skills_route():
