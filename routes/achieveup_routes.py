@@ -1149,63 +1149,6 @@ async def achieveup_ai_analyze_questions_route():
             'statusCode': 500
         }), 500
 
-@achieveup_bp.route('/achieveup/ai/bulk-assign', methods=['POST'])
-async def achieveup_ai_bulk_assign_route():
-    """AI-powered bulk skill assignment (frontend-requested endpoint). (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        data = await request.get_json()
-        
-        if not data:
-            return jsonify({
-                'error': 'Invalid request',
-                'message': 'Request body is required',
-                'statusCode': 400
-            }), 400
-        
-        course_id = data.get('courseId')
-        quiz_id = data.get('quizId')
-        
-        if not course_id or not quiz_id:
-            return jsonify({
-                'error': 'Missing required fields',
-                'message': 'courseId and quizId are required',
-                'statusCode': 400
-            }), 400
-        
-        # Call the AI service for bulk assignment
-        from services.achieveup_service import bulk_assign_skills_with_ai
-        result = await bulk_assign_skills_with_ai(token, course_id, quiz_id)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        # Return the assignments in the format expected by frontend
-        if 'assignments' in result:
-            return jsonify(result['assignments']), 200
-        else:
-            return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
-
 @achieveup_bp.route('/achieveup/progress/<student_id>', methods=['GET'])
 async def get_student_progress_simple_route(student_id):
     """Get student progress (frontend-requested endpoint). (AchieveUp only)"""

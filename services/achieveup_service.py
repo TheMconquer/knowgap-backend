@@ -1045,56 +1045,6 @@ async def analyze_questions_with_ai(token: str, questions: list, course_id: str,
         traceback.print_exc()
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def bulk_assign_skills_with_ai(token: str, course_id: str, questions: list) -> dict:
-    """Perform bulk skill assignment using AI."""
-    try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        # Get course skill matrix
-        skill_matrix = await achieveup_skill_matrices_collection.find_one({'course_id': course_id})
-        course_skills = skill_matrix.get('skills', []) if skill_matrix else []
-        
-        # Import AI service
-        from services.achieveup_ai_service import bulk_assign_skills
-        
-        # Perform bulk assignment
-        assignments = await bulk_assign_skills(course_id, None, questions, course_skills)
-        
-        # Store assignments in database
-        for question_id, skills in assignments.items():
-            if skills:  # Only store if there are skills assigned
-                assignment_doc = {
-                    'course_id': course_id,
-                    'question_id': question_id,
-                    'skills': skills,
-                    'ai_generated': True,
-                    'human_reviewed': False,
-                    'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
-                    'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
-                }
-                
-                # Upsert the assignment
-                await achieveup_question_skills_collection.replace_one(
-                    {'question_id': question_id},
-                    assignment_doc,
-                    upsert=True
-                )
-        
-        return {
-            'courseId': course_id,
-            'assignedQuestions': len([q for q in assignments.values() if q]),
-            'totalQuestions': len(questions),
-            'assignments': assignments,
-            'generatedAt': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Bulk AI skill assignment error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
 async def delete_skill_matrix(token: str, matrix_id: str) -> dict:
     """Delete a skill matrix by ID."""
     try:

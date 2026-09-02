@@ -2,7 +2,6 @@
 
 import logging
 import json
-import re
 import os
 from typing import List, Dict, Any
 from openai import AsyncOpenAI
@@ -20,7 +19,6 @@ async def analyze_questions(questions_data: List[Dict[str, Any]], course_skills:
     """
     Analyze questions for skill mapping using batching for efficiency.
     """
-    
     if not course_skills:
         raise ValueError("analyze_questions requires a non-empty course_skills list")
 
@@ -41,9 +39,10 @@ async def analyze_questions(questions_data: List[Dict[str, Any]], course_skills:
         logger.info(f"Processing AI batch for {len(chunk_texts)} questions...")
         batch_results = await classify_questions_batch_ai(chunk_texts, course_skills)
             
-        for j, idx in enumerate(chunk):
+        for j, question in enumerate(chunk):
             # batch_results is expected to be a dict or list mapping index to skills
-            skills = batch_results.get(str(j)) or batch_results.get(j) or [] results.append({
+            skills = batch_results.get(str(j)) or batch_results.get(j) or []
+            results.append({
                 'questionId': question.get('id'),
                 'suggestedSkills': skills,
                 'analysis_timestamp': datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
@@ -53,10 +52,6 @@ async def analyze_questions(questions_data: List[Dict[str, Any]], course_skills:
 
 async def classify_questions_batch_ai(question_texts: List[str], available_skills: List[str]) -> Dict[str, List[str]]:
     """Use OpenAI to classify multiple questions at once for efficiency."""
-    if not OPENAI_API_KEY or not question_texts:
-        return {}
-    
-
     # Prepare numbered list of questions
     questions_formatted = "\n".join([f"{i}. {text[:500]}" for i, text in enumerate(question_texts)])
         
@@ -96,31 +91,4 @@ async def classify_questions_batch_ai(question_texts: List[str], available_skill
             valid_skills = [s for s in skills if s in available_skills]
             cleaned_results[key] = valid_skills[:3]
         
-return cleaned_results
-
-
-async def bulk_assign_skills(course_id: str, quiz_id: str, questions: List[Dict[str, Any]], course_skills: List[str]) -> Dict[str, List[str]]:
-    """Perform bulk skill assignment for all questions in a quiz."""
-    try:
-        assignments = {}
-        
-        # Analyze all questions
-        question_analyses = await analyze_questions(questions, course_skills)
-        
-        # Extract skill assignments
-        for analysis in question_analyses:
-            question_id = analysis.get('questionId')
-            suggested_skills = analysis.get('suggestedSkills', [])
-            
-            # Only assign skills with reasonable confidence
-            if analysis.get('confidence', 0) >= 0.5 and suggested_skills:
-                assignments[question_id] = suggested_skills
-            else:
-                assignments[question_id] = []
-        
-        logger.info(f"Bulk assigned skills to {len(assignments)} questions in quiz {quiz_id}")
-        return assignments
-        
-    except Exception as e:
-        logger.error(f"Bulk skill assignment error: {str(e)}")
-        return {} 
+    return cleaned_results
