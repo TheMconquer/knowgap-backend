@@ -561,7 +561,7 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
     
 # Test route
-from services.achieveup_canvas_service import get_student_quiz_submission
+from services.canvas_submissions_service import get_student_quiz_submission
 
 @canvas_bp.route('/canvas/test/student-submission', methods=['GET'])
 async def test_student_quiz_submission_route():
