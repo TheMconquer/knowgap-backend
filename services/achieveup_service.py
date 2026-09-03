@@ -880,7 +880,7 @@ async def suggest_course_skills_ai(token: str, course_data: dict) -> dict:
         Description: {course_description}
         
         Return ONLY valid JSON array:
-        [{{"skill": "Skill Name", "description": "Brief description", "relevance": 0.9}}, ...]
+        [{{"skill": "Skill Name", "description": "Brief description"}}, ...]
         
         Make skills specific to the course subject matter.
         """
