@@ -558,4 +558,45 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         result = await get_instructor_quiz_questions(canvas_token, quiz_id, course_id)
         return jsonify(result), 200
     except Exception as e:
-        return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500 
+        return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
+    
+# Test route
+from services.achieveup_canvas_service import get_student_quiz_submission
+
+@canvas_bp.route('/canvas/test/student-submission', methods=['GET'])
+async def test_student_quiz_submission_route():
+    """Test route for get_student_quiz_submission(). (Temporary - for manual testing)"""
+    try:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        canvas_token = auth_header.split(' ')[1]
+        course_id = request.args.get('course_id')
+        quiz_id = request.args.get('quiz_id')
+        student_id = request.args.get('student_id')
+
+        if not course_id or not quiz_id or not student_id:
+            return jsonify({
+                'error': 'Missing parameters',
+                'message': 'course_id, quiz_id, and student_id query parameters are required',
+                'statusCode': 400
+            }), 400
+
+        submission = await get_student_quiz_submission(canvas_token, course_id, quiz_id, student_id)
+
+        if isinstance(submission, dict) and 'error' in submission:
+            return jsonify(submission), submission.get('statusCode', 502)
+
+        return jsonify(submission), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': str(e),
+            'statusCode': 500
+        }), 500
