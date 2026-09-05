@@ -233,8 +233,8 @@ async def create_badge_for_student(user_id: str, course_id: str, skill_id: str, 
                     {'course_id': int(course_id) if str(course_id).isdigit() else course_id}
                 ]
             })
-            if matrix and matrix.get('course_name'):
-                course_name = matrix.get('course_name')
+            if matrix and matrix.get('matrix_name'):
+                course_name = matrix.get('matrix_name')
         except Exception as e:
             logger.warning(f"Could not look up course name for course_id {course_id}: {e}")
         
