@@ -559,3 +559,19 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500 
+    
+# Test route
+from services.achieveup_canvas_service import get_canvas_course_quizzes
+@canvas_bp.route('/canvas/courses/<course_id>/quizzes', methods=['GET'])
+async def canvas_course_quizzes_route(course_id):
+    """Get quizzes for a specific Canvas course for AchieveUp."""
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not token:
+        return jsonify({'error': 'Missing token', 'statusCode': 401}), 401
+
+    result = await get_canvas_course_quizzes(token, course_id)
+
+    if isinstance(result, dict) and 'error' in result:
+        return jsonify(result), result.get('statusCode', 500)
+
+    return jsonify(result), 200

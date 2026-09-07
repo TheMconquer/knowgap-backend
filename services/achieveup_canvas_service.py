@@ -448,7 +448,9 @@ async def get_canvas_quiz_questions(token: str, quiz_id: str) -> dict:
             'per_page': 100
         }
         
+
         async with create_canvas_session() as session:
+            
             async with session.get(url, headers=headers, params=params) as response:
                 if response.status == 200:
                     questions_data = await response.json()
