@@ -562,7 +562,8 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
     
 # Test route
 from services.achieveup_canvas_service import get_canvas_course_quizzes
-@canvas_bp.route('/canvas/courses/<course_id>/quizzes', methods=['GET'])
+
+@canvas_bp.route('/canvas/test/courses/<course_id>/quizzes', methods=['GET'])
 async def canvas_course_quizzes_route(course_id):
     """Get quizzes for a specific Canvas course for AchieveUp."""
     token = request.headers.get('Authorization', '').replace('Bearer ', '')
