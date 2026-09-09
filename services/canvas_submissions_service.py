@@ -145,13 +145,16 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
             'per_page': 100,
             'include[]': ['submission', 'user']
         }
+
+        
+        NEW_Q_URL: str = f"{CANVAS_API_URL}/courses/{course_id}/assignments/{quiz_id}/submissions"
         
         all_submissions = []
         
         async with create_canvas_session() as session:
             # Handle pagination
             while url:
-                async with session.get(url, headers=headers, params=params) as response:
+                async with session.get(NEW_Q_URL, headers=headers) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
@@ -187,6 +190,7 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
     except Exception as e:
         logger.error(f"Get all course submissions error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
+
 
 async def process_submission_data(submission: dict) -> dict:
     """
