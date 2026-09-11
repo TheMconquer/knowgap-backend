@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
-from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL
+from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL, is_new_quiz
 from config import Config
 
 from mongodb import get_db
@@ -145,39 +145,73 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
             'per_page': 100,
             'include[]': ['submission', 'user']
         }
+
+        all_submissions: list = []
         
-        all_submissions = []
+        NEW_Q_URL: str = f"{CANVAS_API_URL}/courses/{course_id}/assignments/{quiz_id}/submissions"
         
         async with create_canvas_session() as session:
             # Handle pagination
-            while url:
-                async with session.get(url, headers=headers, params=params) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
-                        return {
-                            'error': f'Failed to fetch submissions: {response.status}',
-                            'statusCode': response.status
-                        }
-                    
-                    data = await response.json()
-                    submissions = data.get('quiz_submissions', [])
-                    all_submissions.extend(submissions)
-                    
-                    # Check rate limit headers before continuing
-                    await check_rate_limit(response)
-                    
-                    # Check for next page
-                    link_header = response.headers.get('Link', '')
-                    url = None
-                    if 'rel="next"' in link_header:
-                        # Parse next URL from Link header
-                        for link in link_header.split(','):
-                            if 'rel="next"' in link:
-                                url = link.split(';')[0].strip('<> ')
-                                break
-                    
-                    params = {}  # Clear params for subsequent requests (URL has them)
+            match await is_new_quiz(canvas_token, course_id, quiz_id):
+                case True:
+                    async with session.get(NEW_Q_URL, headers=headers) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
+                            return {
+                                'error': f'Failed to fetch submissions: {response.status}',
+                                'statusCode': response.status
+                            }
+                        
+                        data = await response.json()
+
+                        if "errors" in data:
+                            logger.error(f"Canvas' REST API call returned an error: {data['errors']}")
+                            return {
+                                "error": "Canvas API call error.",
+                                "message": "An error occured when attempting to communicate with Canvas' API.",
+                                "statusCode": 400
+                            }
+
+                        all_submissions = [submission for submission in data if submission.get("attempt")]
+
+                case False:
+                    cont: bool = True
+                    while cont:
+                        async with session.get(url, headers=headers, params=params) as response:
+                            if response.status != 200:
+                                error_text = await response.text()
+                                logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
+                                return {
+                                    'error': f'Failed to fetch submissions: {response.status}',
+                                    'statusCode': response.status
+                                }
+                            
+                            data = await response.json()
+                            submissions = data.get('quiz_submissions', [])
+                            all_submissions.extend(submissions)
+
+                            # Check rate limit headers before continuing
+                            
+                            await check_rate_limit(response)
+                            
+                            # Check for next page
+                            link_header = response.headers.get('Link', '')
+                            if 'rel="next"' in link_header:
+                                # Parse next URL from Link header
+                                for link in link_header.split(','):
+                                    if 'rel="next"' in link:
+                                        url = link.split(';')[0].strip('<> ')
+                                        break
+                            else:
+                                cont = False
+                            
+                            params = {}  # Clear params for subsequent requests (URL has them)
+
+
+                case None:
+                    logger.error(f"Failed to determine quiz type: {course_id}, quiz_id: {quiz_id}")
+                    return {'error': f'Failed to determine instructor quiz type.', 'statusCode': 404}
         
         return {
             'submissions': all_submissions,
@@ -187,6 +221,7 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
     except Exception as e:
         logger.error(f"Get all course submissions error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
+
 
 async def process_submission_data(submission: dict) -> dict:
     """

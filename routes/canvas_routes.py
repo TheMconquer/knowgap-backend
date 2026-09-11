@@ -558,4 +558,4 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         result = await get_instructor_quiz_questions(canvas_token, quiz_id, course_id)
         return jsonify(result), 200
     except Exception as e:
-        return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500 
+        return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
