@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
-
+from utils import text_utils
 import re
 from html import unescape
 
@@ -340,29 +340,32 @@ async def upsert_course_description(token: str, course_id: str, description: str
 async def assign_skills_to_questions(token: str, course_id: str, question_skills: dict) -> dict:
     """Assign skills to quiz questions."""
     try:
-        # Verify user token
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return user_result
-        
-        # Store question-skill assignments
-        for question_id, skills in question_skills.items():
+
+        # Retrieve user id to assign ownership to skill assignments
+        user_id = user_result['user']['id']
+
+        for question_text, skills in question_skills.items():
+            normalized = text_utils.normalize_text(question_text)
+            question_hash = text_utils.hash_text(normalized)
+
             assignment_doc = {
-                'question_id': question_id,
-                'course_id': course_id,
+                'question_id': question_hash,
+                'owner_id': user_id,
                 'skills': skills,
                 'assigned_at': datetime.now(timezone.utc).replace(tzinfo=None)
             }
-            
-            # Upsert assignment
+
             await achieveup_question_skills_collection.update_one(
-                {'question_id': question_id, 'course_id': course_id},
+                {'question_id': question_hash, 'owner_id': user_id},
                 {'$set': assignment_doc},
                 upsert=True
             )
-        
+
         return {'message': 'Skills assigned successfully'}
-        
+
     except Exception as e:
         logger.error(f"Assign skills error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
@@ -370,27 +373,45 @@ async def assign_skills_to_questions(token: str, course_id: str, question_skills
 async def get_assigned_skills(token: str, course_id: str, question_ids:list[str]) -> dict:
     """Get skill assigned for a quiz."""
     try:
-        # Verify user token
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return user_result
-        
-        if not course_id or not question_ids:
-                    return {
-                        'error': 'Missing required fields',
-                        'message': 'course_id and question_ids are required',
-                        'statusCode': 400
-                    }
 
+        user_id = user_result['user']['id']
 
-        # Find skills
-        cursor = achieveup_question_skills_collection.find( {'course_id': course_id, 'question_id': {'$in': question_ids}},
-            {'_id': 0})
-        
+        if not question_ids:
+            return {
+                'error': 'Missing required fields',
+                'message': 'question_ids are required',
+                'statusCode': 400
+            }
+
+        # Build hash to original text map for translating results back
+        hash_to_text = {}
+        for text in question_ids:
+            normalized = text_utils.normalize_text(text)
+            h = text_utils.hash_text(normalized)
+            hash_to_text[h] = text
+
+        hashes = list(hash_to_text.keys())
+
+        # Single lookup by owner_id and hash
+        cursor = achieveup_question_skills_collection.find(
+            {'owner_id': user_id, 'question_id': {'$in': hashes}},
+            {'_id': 0}
+        )
         docs = await cursor.to_list(length=None)
+
+        # Translate hashes back to original question text for the frontend
+        question_skills = {}
+        for d in docs:
+            original_text = hash_to_text.get(d['question_id'])
+            if original_text:
+                question_skills[original_text] = d.get('skills', [])
+
         return {
             'course_id': course_id,
-            'question_skills': {str(d['question_id']): d.get('skills', []) for d in docs}
+            'question_skills': question_skills
         }
 
     except Exception as e:
