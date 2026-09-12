@@ -312,6 +312,7 @@ async def get_canvas_courses(token: str) -> dict:
         url = f"{CANVAS_API_URL}/courses"
         params = {
             'enrollment_state': 'active',
+            'enrollment_type': 'student',
             'per_page': 100
         }
         
