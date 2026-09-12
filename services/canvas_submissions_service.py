@@ -173,7 +173,38 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
                                 "statusCode": 400
                             }
 
-                        all_submissions = [submission for submission in data if submission.get("attempt")]
+                        all_submissions = [
+                            {
+                                'attempt': submission.get('attempt'),
+                                'attempts_left': None,
+                                'end_at': submission.get('cached_due_date'),
+                                'excused?': submission.get('excused'),
+                                'extra_attempts': submission.get('extra_attempts'),
+                                'extra_time': None,
+                                'finished_at': submission.get('submitted_at'),
+                                'fudge_points': None,
+                                'has_seen_results': None,
+                                'html_url': submission.get('preview_url') or submission.get('url'),
+                                'id': submission.get('id'),
+                                'kept_score': submission.get('score') if submission.get('score') is not None else submission.get('entered_score'),
+                                'manually_unlocked': None,
+                                'overdue_and_needs_submission': submission.get('missing'),
+                                'quiz_id': submission.get('assignment_id', quiz_id),
+                                'quiz_points_possible': None,
+                                'quiz_version': None,
+                                'result_url': submission.get('preview_url'),
+                                'score': submission.get('score'),
+                                'score_before_regrade': None,
+                                'started_at': None,
+                                'submission_id': submission.get('id'),
+                                'time_spent': None,
+                                'user_id': submission.get('user_id'),
+                                'validation_token': None,
+                                'workflow_state': submission.get('workflow_state'),
+                            }
+                            for submission in data
+                            if submission.get("attempt")
+                        ]
 
                 case False:
                     cont: bool = True
