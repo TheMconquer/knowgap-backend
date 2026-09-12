@@ -73,6 +73,45 @@ async def fetch_video_for_topic(topic):
 
 
 
+async def fetch_videos_for_topic(topic, limit=3):
+    """
+    Fetch multiple candidate videos for a given topic from YouTube.
+
+    Parameters:
+    - topic (str): The topic to search for.
+    - limit (int): Maximum number of videos to return.
+
+    Returns:
+    - list[dict]: A list of video metadata dicts (title, link, channel, thumbnail),
+                  or an empty list if no videos are found.
+    """
+    try:
+        logging.debug(f"Starting search for topic: {topic} (limit={limit})")
+        search = VideosSearch(topic, limit=limit)
+        search_results = search.result()
+        results = search_results.get('result', [])
+
+        if not results:
+            logging.warning(f"No results found for topic '{topic}'")
+            return []
+
+        videos = []
+        for video in results[:limit]:
+            videos.append({
+                'title': clean_metadata_text(video.get('title', 'No Title Found')),
+                'link': video.get('link', 'No Link Found'),
+                'channel': video.get('channel', {}).get('name', 'No Channel Found'),
+                'thumbnail': video.get('thumbnails', [{}])[0].get('url', 'No Thumbnail Found')
+            })
+
+        logging.debug(f"Extracted {len(videos)} videos for topic '{topic}'")
+        return videos
+
+    except Exception as e:
+        logging.error(f"Error fetching videos for topic '{topic}': {e}")
+        return []
+
+
 def extract_video_id(youtube_url):
     """Extracts the video ID from a YouTube URL."""
     video_id = None
