@@ -805,4 +805,57 @@ def clean_html(text: str) -> str:
     import html
     clean_text = html.unescape(clean_text)
     
-    return clean_text 
+    return clean_text
+
+async def search_canvas_schools(school_name: str, url: str = "https://canvas.instructure.com/api/v1/accounts/search?") -> dict:
+    """Search the Canvas API for schools matching the inputted school name."""
+
+    # Import check_rate_limit here to avoid circular import.
+    from services.canvas_submissions_service import check_rate_limit
+
+    # Define request parameters.
+    params = {
+        'per_page': 100,
+        "name": school_name
+    }
+
+    schools: list = []
+
+    try:
+        async with create_canvas_session() as session:
+            parse_pages: bool = True
+            while parse_pages:
+                async with session.get(url, params=params) as res:
+
+                    if res.status != 200:
+                        res_error: str = await res.text()
+
+                        logger.error(f"Error fetching Canvas school records: {res.status} - {res_error}")
+                        return {
+                            'error': f'Failed to fetch schools: {res.status}',
+                            'statusCode': res.status
+                        }
+
+                    school_data: dict = await res.json()
+                    schools.extend([x.get("name", "") for x in school_data])
+
+                    await check_rate_limit(res)
+
+                    # Check headers to see if response returned more than one page.
+                    url_headers: str = res.headers.get("Link", "")
+                    if "rel=\"next\"" in url_headers:
+                        for header_link in url_headers.split(","):
+                            if 'rel="next"' in header_link:
+
+                                # Set new request values.
+                                url = header_link.split(';')[0].strip('<> ')
+                                params = None
+                                break
+                    else:
+                        parse_pages = False
+
+    except Exception as error:
+        logger.error(f"Error searching for schools utilizing Canvas: {str(error)}")
+        return {"error": "Internal server error.", "statusCode": 500}
+    
+    return {"schools": schools}

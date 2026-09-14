@@ -2,7 +2,8 @@ from quart import Blueprint, request, jsonify
 from services.achieveup_canvas_service import (
     get_canvas_courses,
     get_canvas_course_quizzes,
-    get_canvas_quiz_questions
+    get_canvas_quiz_questions,
+    search_canvas_schools
 )
 import logging
 logger = logging.getLogger(__name__)
@@ -278,3 +279,32 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500 
+    
+@canvas_bp.route("/canvas/schools/search", methods=["GET"])
+async def school_name_search_route():
+    """Search for a school using Canvas' school domain search API."""
+
+    try:
+        school_search_term: str = request.args.get("school_name")
+
+        if not school_search_term:
+            return jsonify({
+                "error": "Missing required fields.",
+                "message": "School name is required.",
+                "statusCode": 400
+            }), 400
+
+        result = await search_canvas_schools(school_search_term)
+
+        if "error" in result:
+            return jsonify({
+                "error": result.get("error", "Internal server error."),
+                "message": result.get("message", "Internal server error."),
+                "statusCode": result.get("statusCode", 500)
+            }), result.get("statusCode", 500)
+
+        return jsonify(result), 200
+    except Exception as error:
+        return jsonify({"error": "Internal server error.",
+                        "message": "An unexpected error occured.",
+                        "StatusCode": 500}),500
