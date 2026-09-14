@@ -5,7 +5,8 @@ from services.achieveup_auth_service import (
     achieveup_verify_token,
     achieveup_get_user_info,
     achieveup_update_profile,
-    achieveup_change_password
+    achieveup_change_password,
+    search_canvas_schools
 )
 
 auth_bp = Blueprint('auth', __name__)
@@ -396,3 +397,20 @@ async def refresh_token_route():
             'message': 'An unexpected error occurred',
             'statusCode': 500
         }), 500 
+    
+# Test route
+@auth_bp.route('/canvas/test/domain', methods=['GET'])
+async def canvas_domain_route():
+    from services.achieveup_auth_service import search_canvas_schools
+    
+    """Get the Canvas domain for a given edu email, for AchieveUp."""
+    email = request.args.get('email')
+    if not email:
+        return jsonify({'error': 'Missing email', 'statusCode': 400}), 400
+
+    result = await search_canvas_schools(email)
+
+    if isinstance(result, dict) and 'error' in result:
+        return jsonify(result), result.get('statusCode', 500)
+
+    return jsonify(result), 200

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pymongo.errors import DuplicateKeyError
 from config import Config
 import re
+import requests
 
 from mongodb import get_db
 
@@ -544,3 +545,47 @@ def require_instructor_role(func):
             }, 500
     
     return wrapper 
+
+async def search_canvas_schools(email: str, url: str = "https://canvas.instructure.com/api/v1/accounts/search?") -> list[str]:
+
+    from services.achieveup_canvas_service import create_canvas_session
+    from services.canvas_submissions_service import check_rate_limit
+
+    email_elements: tuple = tuple(email.rsplit('@', 1)[1].split('.')[-2:])
+
+
+    # # params: dict = {"domain": "ucf",}
+    # params: dict = {}
+
+    params = {
+        'per_page': 100,
+        "name": "University of cent"
+    }
+
+    schools: list = []
+
+    try:
+        # Check using edu email domain.
+        async with create_canvas_session() as session:
+            parse_pages: bool = True
+            while parse_pages:
+                async with session.get(url, params=params) as res:
+                    school_data: dict = await res.json()
+                    schools.extend([x.get("name", "") for x in school_data])
+
+                    await check_rate_limit(res)
+
+                    url_headers: str = res.headers.get("Link", "")
+                    if "rel=\"next\"" in url_headers:
+                        for header_link in url_headers.split(","):
+                            if 'rel="next"' in header_link:
+                                url = header_link.split(';')[0].strip('<> ')
+                    else:
+                        parse_pages = False
+    except Exception as error:
+        pass
+        # async with session.get()
+
+    # Perform WHOIS lookup.
+
+    return schools
