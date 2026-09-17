@@ -89,7 +89,7 @@ def password_meets_requirements(password: str) -> str | None:
         return "Password must contain at least one number."
     return None
 
-async def achieveup_signup(name: str, email: str, password: str, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
+async def achieveup_signup(name: str, email: str, password: str, school: str, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
     """User registration with email/password and mandatory Canvas API token."""
     try:
         # Check if user already exists
@@ -134,7 +134,24 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
         # try instructor first; a real teaching-enrolled token should grant
         # instructor access automatically, no hint needed. Fall back to
         # confirming it's at least a valid student token; reject otherwise.
-        from services.achieveup_canvas_service import validate_canvas_token
+        from services.achieveup_canvas_service import get_school_canvas_domain, validate_canvas_token
+        
+        school_domain: str = await get_school_canvas_domain(school)
+
+        # Check if school domain is a dict, indicating a failure.
+        if isinstance(school_domain, dict):
+            return {
+                'error': school_domain.get("error", "Internal server error."),
+                'message': school_domain.get("message", "Internal server error."),
+                'statusCode': school_domain.get("statusCode", 400)
+            }
+        # Check if domain is empty.
+        if not school_domain:
+            return {
+                'error': 'Invalid domain.',
+                'message': 'Could not find a Canvas domain for the selected school.',
+                'statusCode': 400
+            }
 
         instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
         if instructor_check['valid']:
@@ -169,7 +186,9 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
             'canvas_student_id': validated_check.get('user_info', {}).get('id'),
             'has_student_access': has_student_access,
             'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
-            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            "school_domain": school_domain,
+            "school_name": school
         }
 
         # Store the validated token (encrypted)
@@ -544,4 +563,4 @@ def require_instructor_role(func):
                 'statusCode': 500
             }, 500
     
-    return wrapper 
+    return wrapper

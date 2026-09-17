@@ -38,7 +38,7 @@ async def achieveup_signup_route():
             }), 400
         
         # Call authentication service
-        result = await achieveup_signup(name, email, password, canvas_api_token, canvas_token_type, school)
+        result = await achieveup_signup(name, email, password, school, canvas_api_token, canvas_token_type)
         
         if 'error' in result:
             return jsonify({

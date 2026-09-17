@@ -821,41 +821,82 @@ async def search_canvas_schools(school_name: str, url: str = "https://canvas.ins
 
     schools: list = []
 
-    try:
-        async with create_canvas_session() as session:
-            parse_pages: bool = True
-            while parse_pages:
-                async with session.get(url, params=params) as res:
+    schools.extend(["University of Central Florida", "Florida Polytechnic"])
 
-                    if res.status != 200:
-                        res_error: str = await res.text()
+    # If approved to allow access to all school, uncomment following code.
 
-                        logger.error(f"Error fetching Canvas school records: {res.status} - {res_error}")
-                        return {
-                            'error': f'Failed to fetch schools: {res.status}',
-                            'statusCode': res.status
-                        }
+    # try:
+    #     async with create_canvas_session() as session:
+    #         parse_pages: bool = True
+    #         while parse_pages:
+    #             async with session.get(url, params=params) as res:
 
-                    school_data: dict = await res.json()
-                    schools.extend([x.get("name", "") for x in school_data])
+    #                 if res.status != 200:
+    #                     res_error: str = await res.text()
 
-                    await check_rate_limit(res)
+    #                     logger.error(f"Error fetching Canvas school records: {res.status} - {res_error}")
+    #                     return {
+    #                         'error': f'Failed to fetch schools: {res.status}',
+    #                         'statusCode': res.status
+    #                     }
 
-                    # Check headers to see if response returned more than one page.
-                    url_headers: str = res.headers.get("Link", "")
-                    if "rel=\"next\"" in url_headers:
-                        for header_link in url_headers.split(","):
-                            if 'rel="next"' in header_link:
+    #                 school_data: dict = await res.json()
+    #                 schools.extend([x.get("name", "") for x in school_data])
 
-                                # Set new request values.
-                                url = header_link.split(';')[0].strip('<> ')
-                                params = None
-                                break
-                    else:
-                        parse_pages = False
+    #                 await check_rate_limit(res)
 
-    except Exception as error:
-        logger.error(f"Error searching for schools utilizing Canvas: {str(error)}")
-        return {"error": "Internal server error.", "statusCode": 500}
+    #                 # Check headers to see if response returned more than one page.
+    #                 url_headers: str = res.headers.get("Link", "")
+    #                 if "rel=\"next\"" in url_headers:
+    #                     for header_link in url_headers.split(","):
+    #                         if 'rel="next"' in header_link:
+
+    #                             # Set new request values.
+    #                             url = header_link.split(';')[0].strip('<> ')
+    #                             params = None
+    #                             break
+    #                 else:
+    #                     parse_pages = False
+
+    # except Exception as error:
+    #     logger.error(f"Error searching for schools utilizing Canvas: {str(error)}")
+    #     return {"error": "Internal server error.", "statusCode": 500}
     
     return {"schools": schools}
+
+async def get_school_canvas_domain(school_name: str, url: str = "https://canvas.instructure.com/api/v1/accounts/search?") -> str | dict:
+    params = {
+        "name": school_name
+    }
+
+    try:
+        async with create_canvas_session() as session:
+            async with session.get(url, params=params) as res:
+                if res.status != 200:
+                    res_error: str = await res.text()
+
+                    logger.error(f"Error fetching Canvas school records: {res.status} - {res_error}")
+                    return {
+                        "error": f"Failed to fetch schools: {res.status}",
+                        "message": "An error occured when calling the Canvas API.",
+                        "statusCode": res.status
+                    }
+
+                school_data: dict = await res.json()
+
+                for school in school_data:
+                    if school.get("name", "") == school_name:
+                        return school.get("domain", "")
+                
+                logger.error(f"Failed to find school {school_name}")
+                return {
+                    "error": "Internal server error.",
+                    "message": "Failed to find Canvas' school data.",
+                    "statusCode": 0
+                }
+
+    except Exception as error:
+        logger.error(f"Error retrieving Canvas domain for school: {school_name}, : {str(error)}")
+        return {"error": "Internal server error.",
+                "message": "Failed to retrieve domain for school.",
+                "statusCode": 500}
