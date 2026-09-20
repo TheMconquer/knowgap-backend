@@ -108,7 +108,7 @@ achieveup_canvas_questions_collection = db[Config.ACHIEVEUP_CANVAS_QUESTIONS_COL
 # Canvas API configuration
 CANVAS_API_URL = getattr(Config, 'CANVAS_API_URL', 'https://webcourses.ucf.edu/api/v1')
 
-async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'student') -> dict:
+async def validate_canvas_token(canvas_token: str, canvas_domain: str, canvas_token_type: str = 'student') -> dict:
     """Validate Canvas API token by testing it with Canvas API. Supports student and instructor tokens."""
     try:
         # Check if this is a demo token (only if demo mode is enabled)
@@ -121,7 +121,7 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
         }
         
         # Test token by calling Canvas API /users/self endpoint
-        url = f"{CANVAS_API_URL}/users/self"
+        url = f"https://{canvas_domain}/api/v1/users/self"
         async with create_canvas_session() as session:
             async with session.get(url, headers=headers) as response:
                 if response.status != 200:
@@ -141,7 +141,7 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
         permissions = {}
         if canvas_token_type == 'instructor':
             # Request courses with enrollment information included
-            courses_url = f"{CANVAS_API_URL}/courses"
+            courses_url = f"https://{canvas_domain}/api/v1/courses"
             params = {
                 'enrollment_type': 'teacher',  # Only get courses where user is a teacher
                 'per_page': 100,

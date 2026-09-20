@@ -153,17 +153,17 @@ async def achieveup_signup(name: str, email: str, password: str, school: str, ca
                 'statusCode': 400
             }
 
-        instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
+        instructor_check = await validate_canvas_token(canvas_api_token, school_domain, 'instructor')
         if instructor_check['valid']:
             role = canvas_token_type = 'instructor'
             validated_check = instructor_check
             # Same account may also carry a real student enrollment somewhere
             # (Canvas roles are per-course, not per-user). Check informationally
             # so a dual-enrolled instructor can later toggle to a student view.
-            student_check = await validate_canvas_token(canvas_api_token, 'student')
+            student_check = await validate_canvas_token(canvas_api_token, school_domain, 'student')
             has_student_access = bool(student_check['valid'])
         else:
-            student_check = await validate_canvas_token(canvas_api_token, 'student')
+            student_check = await validate_canvas_token(canvas_api_token, school_domain, 'student')
             if not student_check['valid']:
                 return {
                     'error': 'Invalid Canvas token',
@@ -224,7 +224,9 @@ async def achieveup_signup(name: str, email: str, password: str, school: str, ca
             'hasCanvasToken': True,
             'canvasTokenType': canvas_token_type,
             'canvas_student_id': user_doc['canvas_student_id'],
-            'has_student_access': has_student_access
+            'has_student_access': has_student_access,
+            "school_domain": school_domain,
+            "school_name": school
         }
 
         return {
@@ -345,7 +347,7 @@ async def achieveup_get_user_info(token: str) -> dict:
     """Get user information from token."""
     return await achieveup_verify_token(token)
 
-async def achieveup_update_profile(token: str, name: str, email: str, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
+async def achieveup_update_profile(token: str, name: str, email: str, school_name: str, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
     """Update user profile information including Canvas API token."""
     try:
         # Verify token and get user info
@@ -386,16 +388,33 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             # same instructor-first-then-student-fallback pattern as signup, so a
             # student can't hand-craft a request claiming canvasTokenType=instructor
             # to get promoted on a token that was never actually verified as one.
-            from services.achieveup_canvas_service import validate_canvas_token
+            from services.achieveup_canvas_service import validate_canvas_token, get_school_canvas_domain
 
-            instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
+            school_domain: str = await get_school_canvas_domain(school_name)
+
+            # Check if school domain is a dict, indicating a failure.
+            if isinstance(school_domain, dict):
+                return {
+                    'error': school_domain.get("error", "Internal server error."),
+                    'message': school_domain.get("message", "Internal server error."),
+                    'statusCode': school_domain.get("statusCode", 400)
+                }
+            # Check if domain is empty.
+            if not school_domain:
+                return {
+                    'error': 'Invalid domain.',
+                    'message': 'Could not find a Canvas domain for the selected school.',
+                    'statusCode': 400
+                }
+
+            instructor_check = await validate_canvas_token(canvas_api_token, school_domain, 'instructor')
             if instructor_check['valid']:
                 token_type = 'instructor'
                 validated_check = instructor_check
-                student_check = await validate_canvas_token(canvas_api_token, 'student')
+                student_check = await validate_canvas_token(canvas_api_token, school_domain, 'student')
                 has_student_access = bool(student_check['valid'])
             else:
-                student_check = await validate_canvas_token(canvas_api_token, 'student')
+                student_check = await validate_canvas_token(canvas_api_token, school_domain, 'student')
                 if not student_check['valid']:
                     return {
                         'error': 'Invalid Canvas token',
