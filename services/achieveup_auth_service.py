@@ -224,9 +224,7 @@ async def achieveup_signup(name: str, email: str, password: str, school: str, ca
             'hasCanvasToken': True,
             'canvasTokenType': canvas_token_type,
             'canvas_student_id': user_doc['canvas_student_id'],
-            'has_student_access': has_student_access,
-            "school_domain": school_domain,
-            "school_name": school
+            'has_student_access': has_student_access
         }
 
         return {
@@ -347,7 +345,7 @@ async def achieveup_get_user_info(token: str) -> dict:
     """Get user information from token."""
     return await achieveup_verify_token(token)
 
-async def achieveup_update_profile(token: str, name: str, email: str, school_name: str, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
+async def achieveup_update_profile(token: str, name: str, email: str, school_name: str | None, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
     """Update user profile information including Canvas API token."""
     try:
         # Verify token and get user info
@@ -390,22 +388,33 @@ async def achieveup_update_profile(token: str, name: str, email: str, school_nam
             # to get promoted on a token that was never actually verified as one.
             from services.achieveup_canvas_service import validate_canvas_token, get_school_canvas_domain
 
-            school_domain: str = await get_school_canvas_domain(school_name)
+            school_domain: str = ""
 
-            # Check if school domain is a dict, indicating a failure.
-            if isinstance(school_domain, dict):
-                return {
-                    'error': school_domain.get("error", "Internal server error."),
-                    'message': school_domain.get("message", "Internal server error."),
-                    'statusCode': school_domain.get("statusCode", 400)
-                }
-            # Check if domain is empty.
-            if not school_domain:
-                return {
-                    'error': 'Invalid domain.',
-                    'message': 'Could not find a Canvas domain for the selected school.',
-                    'statusCode': 400
-                }
+            if school_name:
+                school_domain: str = await get_school_canvas_domain(school_name)
+
+                # Check if school domain is a dict, indicating a failure.
+                if isinstance(school_domain, dict):
+                    return {
+                        'error': school_domain.get("error", "Internal server error."),
+                        'message': school_domain.get("message", "Internal server error."),
+                        'statusCode': school_domain.get("statusCode", 400)
+                    }
+                # Check if domain is empty.
+                if not school_domain:
+                    return {
+                        'error': 'Invalid domain.',
+                        'message': 'Could not find a Canvas domain for the selected school.',
+                        'statusCode': 400
+                    }
+            else:
+                user_data = await achieveup_users_collection.find_one(
+                    {'user_id': user_id},
+                    {'_id': 0, 'school_name': 1, 'school_domain': 1}
+                )
+
+                school_name = user_data.get('school_name', '')
+                school_domain = user_data.get('school_domain', '')
 
             instructor_check = await validate_canvas_token(canvas_api_token, school_domain, 'instructor')
             if instructor_check['valid']:
@@ -435,6 +444,8 @@ async def achieveup_update_profile(token: str, name: str, email: str, school_nam
             update_data['role'] = token_type
             update_data['canvas_student_id'] = validated_check.get('user_info', {}).get('id')
             update_data['has_student_access'] = has_student_access
+            update_data["school_name"] = school_name
+            update_data["school_domain"] = school_domain
 
 
         # Update user in database
