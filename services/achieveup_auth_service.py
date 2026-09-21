@@ -409,12 +409,12 @@ async def achieveup_update_profile(token: str, name: str, email: str, school_nam
                     }
             else:
                 user_data = await achieveup_users_collection.find_one(
-                    {'user_id': user_id},
-                    {'_id': 0, 'school_name': 1, 'school_domain': 1}
+                    {"user_id": user_id},
+                    {"_id": 0, "school_name": 1, "school_domain": 1}
                 )
 
-                school_name = user_data.get('school_name', '')
-                school_domain = user_data.get('school_domain', '')
+                school_name = user_data.get("school_name", "")
+                school_domain = user_data.get("school_domain", "")
 
             instructor_check = await validate_canvas_token(canvas_api_token, school_domain, 'instructor')
             if instructor_check['valid']:
@@ -594,3 +594,31 @@ def require_instructor_role(func):
             }, 500
     
     return wrapper
+
+async def get_user_canvas_credentials(user_id: str, get_token: bool) ->  dict:
+    user_data = await achieveup_users_collection.find_one(
+                    {"user_id": user_id},
+                    {"_id": 0, "canvas_api_token": 1, "school_domain": 1}
+                )
+    
+    if not user_data:
+        return {
+            "error": "Could not find user."
+        }
+
+    if not user_data.get("school_domain") or not user_data.get("canvas_api_token"):
+        return {
+            "error": "Could not find required user data."
+        }
+
+    if get_token:
+        from utils.encryption_utils import decrypt_token
+        
+        return {
+            "token": decrypt_token(bytes.fromhex(Config.HEX_ENCRYPTION_KEY), user_data["canvas_api_token"]),
+            "school_domain": user_data["school_domain"]
+        }
+
+    return {
+        "school_domain": user_data["school_domain"]
+    }
