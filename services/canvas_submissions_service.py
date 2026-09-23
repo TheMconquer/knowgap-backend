@@ -67,50 +67,58 @@ async def get_student_quiz_submission(canvas_token: str, course_id: str, quiz_id
         }
         
         # Get quiz submission
-        url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
         params = {
             'user_id': student_id,
             'include[]': ['submission', 'quiz', 'user']
         }
-        
+
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Canvas submission fetch error: {response.status} - {error_text}")
-                    return {
-                        'error': f'Failed to fetch submission: {response.status}',
-                        'statusCode': response.status
-                    }
+            match await is_new_quiz(canvas_token, course_id, quiz_id):
+                case False:
+                    url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
+                    async with session.get(url, headers=headers, params=params) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            logger.error(f"Canvas submission fetch error: {response.status} - {error_text}")
+                            return {
+                                'error': f'Failed to fetch submission: {response.status}',
+                                'statusCode': response.status
+                            }
+                        
+                        data = await response.json()
+                        
+                        # Canvas returns submissions in 'quiz_submissions' array
+                        submissions = data.get('quiz_submissions', [])
+                        if not submissions:
+                            return {
+                                'error': 'No submission found',
+                                'message': 'Student has not submitted this quiz',
+                                'statusCode': 404
+                            }
+                        
+                        # Get the most recent submission
+                        submission = submissions[0]
+                        
+                        # Fetch detailed submission data with questions
+                        submission_id = submission.get('id')
+                        questions_url = f"{CANVAS_API_URL}/quiz_submissions/{submission_id}/questions"
+                        
+                        async with session.get(questions_url, headers=headers) as q_response:
+                            if q_response.status == 200:
+                                questions_data = await q_response.json()
+                                submission['questions'] = questions_data.get('quiz_submission_questions', [])
+                            else:
+                                logger.warning(f"Could not fetch submission questions: {q_response.status}")
+                                submission['questions'] = []
+                        
+                        return submission
                 
-                data = await response.json()
-                
-                # Canvas returns submissions in 'quiz_submissions' array
-                submissions = data.get('quiz_submissions', [])
-                if not submissions:
-                    return {
-                        'error': 'No submission found',
-                        'message': 'Student has not submitted this quiz',
-                        'statusCode': 404
-                    }
-                
-                # Get the most recent submission
-                submission = submissions[0]
-                
-                # Fetch detailed submission data with questions
-                submission_id = submission.get('id')
-                questions_url = f"{CANVAS_API_URL}/quiz_submissions/{submission_id}/questions"
-                
-                async with session.get(questions_url, headers=headers) as q_response:
-                    if q_response.status == 200:
-                        questions_data = await q_response.json()
-                        submission['questions'] = questions_data.get('quiz_submission_questions', [])
-                    else:
-                        logger.warning(f"Could not fetch submission questions: {q_response.status}")
-                        submission['questions'] = []
-                
-                return submission
-                
+                case True:
+
+                    
+                case None:
+                    pass
+                        
     except aiohttp.ClientError as e:
         logger.error(f"Canvas API connection error: {str(e)}")
         return {
@@ -141,10 +149,6 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
         }
         
         url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
-        params = {
-            'per_page': 100,
-            'include[]': ['submission', 'user']
-        }
 
         all_submissions: list = []
         
@@ -154,59 +158,85 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
             # Handle pagination
             match await is_new_quiz(canvas_token, course_id, quiz_id):
                 case True:
-                    async with session.get(NEW_Q_URL, headers=headers) as response:
-                        if response.status != 200:
-                            error_text = await response.text()
-                            logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
-                            return {
-                                'error': f'Failed to fetch submissions: {response.status}',
-                                'statusCode': response.status
-                            }
-                        
-                        data = await response.json()
+                    cont: bool = True
+                    params = {
+                        'per_page': 100
+                    }
 
-                        if "errors" in data:
-                            logger.error(f"Canvas' REST API call returned an error: {data['errors']}")
-                            return {
-                                "error": "Canvas API call error.",
-                                "message": "An error occured when attempting to communicate with Canvas' API.",
-                                "statusCode": 400
-                            }
+                    while cont:
+                        async with session.get(NEW_Q_URL, headers=headers, params=params) as response:
+                            if response.status != 200:
+                                error_text = await response.text()
+                                logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
+                                return {
+                                    'error': f'Failed to fetch submissions: {response.status}',
+                                    'statusCode': response.status
+                                }
+                            
+                            data = await response.json()
 
-                        all_submissions = [
-                            {
-                                'attempt': submission.get('attempt'),
-                                'attempts_left': None,
-                                'end_at': submission.get('cached_due_date'),
-                                'excused?': submission.get('excused'),
-                                'extra_attempts': submission.get('extra_attempts'),
-                                'extra_time': None,
-                                'finished_at': submission.get('submitted_at'),
-                                'fudge_points': None,
-                                'has_seen_results': None,
-                                'html_url': submission.get('preview_url') or submission.get('url'),
-                                'id': submission.get('id'),
-                                'kept_score': submission.get('score') if submission.get('score') is not None else submission.get('entered_score'),
-                                'manually_unlocked': None,
-                                'overdue_and_needs_submission': submission.get('missing'),
-                                'quiz_id': submission.get('assignment_id', quiz_id),
-                                'quiz_points_possible': None,
-                                'quiz_version': None,
-                                'result_url': submission.get('preview_url'),
-                                'score': submission.get('score'),
-                                'score_before_regrade': None,
-                                'started_at': None,
-                                'submission_id': submission.get('id'),
-                                'time_spent': None,
-                                'user_id': submission.get('user_id'),
-                                'validation_token': None,
-                                'workflow_state': submission.get('workflow_state'),
-                            }
-                            for submission in data
-                            if submission.get("attempt")
-                        ]
+                            if "errors" in data:
+                                logger.error(f"Canvas' REST API call returned an error: {data['errors']}")
+                                return {
+                                    "error": "Canvas API call error.",
+                                    "message": "An error occured when attempting to communicate with Canvas' API.",
+                                    "statusCode": 400
+                                }
+
+                            all_submissions.extend([
+                                {
+                                    'attempt': submission.get('attempt'),
+                                    'attempts_left': None,
+                                    'end_at': submission.get('cached_due_date'),
+                                    'excused?': submission.get('excused'),
+                                    'extra_attempts': submission.get('extra_attempts'),
+                                    'extra_time': None,
+                                    'finished_at': submission.get('submitted_at'),
+                                    'fudge_points': None,
+                                    'has_seen_results': None,
+                                    'html_url': submission.get('preview_url') or submission.get('url'),
+                                    'id': submission.get('id'),
+                                    'kept_score': submission.get('score') if submission.get('score') is not None else submission.get('entered_score'),
+                                    'manually_unlocked': None,
+                                    'overdue_and_needs_submission': submission.get('missing'),
+                                    'quiz_id': submission.get('assignment_id', quiz_id),
+                                    'quiz_points_possible': None,
+                                    'quiz_version': None,
+                                    'result_url': submission.get('preview_url'),
+                                    'score': submission.get('score'),
+                                    'score_before_regrade': None,
+                                    'started_at': None,
+                                    'submission_id': submission.get('id'),
+                                    'time_spent': None,
+                                    'user_id': submission.get('user_id'),
+                                    'validation_token': None,
+                                    'workflow_state': submission.get('workflow_state'),
+                                }
+                                for submission in data
+                                if submission.get("attempt")
+                            ])
+
+                            await check_rate_limit(response)
+                                
+                            # Check for next page
+                            link_header = response.headers.get('Link', '')
+                            if 'rel="next"' in link_header:
+                                # Parse next URL from Link header
+                                for link in link_header.split(','):
+                                    if 'rel="next"' in link:
+                                        NEW_Q_URL = link.split(';')[0].strip('<> ')
+                                        break
+                            else:
+                                cont = False
+                            
+                            params = {}
 
                 case False:
+                    params = {
+                        'per_page': 100,
+                        'include[]': ['submission', 'user']
+                    }
+
                     cont: bool = True
                     while cont:
                         async with session.get(url, headers=headers, params=params) as response:
