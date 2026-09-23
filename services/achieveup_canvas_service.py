@@ -882,10 +882,11 @@ async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bo
         'Content-Type': 'application/json'
     }
 
-    json_payload: dict = {
-        "query": "query get_quiz_types($course_id: ID!) {" \
+    after: str | None = None
+
+    json_query: str = "query get_quiz_types($course_id: ID!, $after: String) {" \
                     "course(id: $course_id) {" \
-                        "assignmentsConnection {" \
+                        "assignmentsConnection(first: 100, after: $after) {" \
                             "nodes {" \
                                 "_id," \
                                 "submissionTypes," \
@@ -893,31 +894,44 @@ async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bo
                                     "_id" \
                                 "}," \
                                 "isNewQuiz" \
+                            "}," \
+                            "pageInfo {" \
+                                "hasNextPage," \
+                                "endCursor" \
                             "}" \
                         "}" \
                     "}" \
-                "}",
-        "variables": {"course_id": course_id}
-    }
+                "}"
 
     async with create_canvas_session() as session:
-        async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as res:
-            if res.status == 200:
-                quizzes_data = await res.json()
+        while True:
+            json_payload: dict = {
+                "query": json_query,
+                "variables": {"course_id": course_id, "after": after}
+            }
 
-                if "errors" in quizzes_data:
-                    logger.error(f"Canvas' GraphQL API call returned an error: {quizzes_data['errors']}")
-                    return {
-                        "error": "Canvas API call error.",
-                        "message": "An error occured when attempting to communicate with Canvas' API.",
-                        "statusCode": 400
-                    }
+            async with session.post(NEW_CANVAS_API_URL, headers=headers, json=json_payload) as res:
+                if res.status == 200:
+                    quizzes_data = await res.json()
 
-                for quiz in (((quizzes_data.get("data") or {}).get("course") or {}).get("assignmentsConnection") or {}).get("nodes"):
-                    if (quiz.get("quiz") or {}).get("_id", "") == quiz_id or quiz.get("_id") == quiz_id:
-                        if quiz.get("isNewQuiz", False) is True:
-                            return True
-                        else:
-                            return False
-                
-                return
+                    if "errors" in quizzes_data:
+                        logger.error(f"Canvas' GraphQL API call returned an error: {quizzes_data['errors']}")
+                        return
+
+                    quizzes = (((quizzes_data.get("data") or {}).get("course") or {}).get("assignmentsConnection") or {})
+                    
+                    for quiz in (quizzes.get("nodes") or []):
+                        if (quiz.get("quiz") or {}).get("_id", "") == quiz_id or quiz.get("_id") == quiz_id:
+                            if quiz.get("isNewQuiz", False) is True:
+                                return True
+                            else:
+                                return False
+                    
+                    current_page_info: dict = quizzes.get("pageInfo") or {}
+                    if not (current_page_info.get("hasNextPage")):
+                        return
+                    
+                    after = current_page_info.get("endCursor")
+                else:
+                    logger.error(f"Canvas' GraphQL API call returned an error.")
+                    return

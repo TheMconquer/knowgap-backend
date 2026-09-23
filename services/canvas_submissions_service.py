@@ -65,60 +65,52 @@ async def get_student_quiz_submission(canvas_token: str, course_id: str, quiz_id
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
-        
+
         # Get quiz submission
+        url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
         params = {
             'user_id': student_id,
             'include[]': ['submission', 'quiz', 'user']
         }
 
         async with create_canvas_session() as session:
-            match await is_new_quiz(canvas_token, course_id, quiz_id):
-                case False:
-                    url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
-                    async with session.get(url, headers=headers, params=params) as response:
-                        if response.status != 200:
-                            error_text = await response.text()
-                            logger.error(f"Canvas submission fetch error: {response.status} - {error_text}")
-                            return {
-                                'error': f'Failed to fetch submission: {response.status}',
-                                'statusCode': response.status
-                            }
-                        
-                        data = await response.json()
-                        
-                        # Canvas returns submissions in 'quiz_submissions' array
-                        submissions = data.get('quiz_submissions', [])
-                        if not submissions:
-                            return {
-                                'error': 'No submission found',
-                                'message': 'Student has not submitted this quiz',
-                                'statusCode': 404
-                            }
-                        
-                        # Get the most recent submission
-                        submission = submissions[0]
-                        
-                        # Fetch detailed submission data with questions
-                        submission_id = submission.get('id')
-                        questions_url = f"{CANVAS_API_URL}/quiz_submissions/{submission_id}/questions"
-                        
-                        async with session.get(questions_url, headers=headers) as q_response:
-                            if q_response.status == 200:
-                                questions_data = await q_response.json()
-                                submission['questions'] = questions_data.get('quiz_submission_questions', [])
-                            else:
-                                logger.warning(f"Could not fetch submission questions: {q_response.status}")
-                                submission['questions'] = []
-                        
-                        return submission
-                
-                case True:
+            async with session.get(url, headers=headers, params=params) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Canvas submission fetch error: {response.status} - {error_text}")
+                    return {
+                        'error': f'Failed to fetch submission: {response.status}',
+                        'statusCode': response.status
+                    }
 
-                    
-                case None:
-                    pass
-                        
+                data = await response.json()
+
+                # Canvas returns submissions in 'quiz_submissions' array
+                submissions = data.get('quiz_submissions', [])
+                if not submissions:
+                    return {
+                        'error': 'No submission found',
+                        'message': 'Student has not submitted this quiz',
+                        'statusCode': 404
+                    }
+
+                # Get the most recent submission
+                submission = submissions[0]
+
+                # Fetch detailed submission data with questions
+                submission_id = submission.get('id')
+                questions_url = f"{CANVAS_API_URL}/quiz_submissions/{submission_id}/questions"
+
+                async with session.get(questions_url, headers=headers) as q_response:
+                    if q_response.status == 200:
+                        questions_data = await q_response.json()
+                        submission['questions'] = questions_data.get('quiz_submission_questions', [])
+                    else:
+                        logger.warning(f"Could not fetch submission questions: {q_response.status}")
+                        submission['questions'] = []
+
+                return submission
+
     except aiohttp.ClientError as e:
         logger.error(f"Canvas API connection error: {str(e)}")
         return {
