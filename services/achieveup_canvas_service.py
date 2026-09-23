@@ -474,6 +474,7 @@ async def get_canvas_quiz_questions(token: str, quiz_id: str) -> dict:
                     # Transform to AchieveUp format
                     questions = []
                     for question in questions_data:
+                        ## if question.get("question_type") == ""
                         question_info = {
                             'id': str(question.get('id')),
                             'question_text': question.get('question_text', ''),
@@ -686,12 +687,16 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                             questions_data = await response.json()
                             questions = []
                             for question in questions_data:
+                                if question.get('question_type') == 'text_only_question': continue
                                 questions.append({
                                     'id': str(question.get('id')),
                                     'question_text': question.get('question_text', ''),
                                     'quiz_id': str(quiz_id)
                                 })
                             return questions
+                        else:
+                            logger.error(f"Canvas instructor quiz questions error: {response.status} - {await response.text()}")
+                            return {'error': f'Failed to fetch instructor quiz questions: {response.status}', 'statusCode': response.status}
                 
                 # New quiz logic.
                 case True:
@@ -702,16 +707,20 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                             # Check for errors.
                             if "errors" in questions_data:
                                 logger.error(f"Canvas instructor quiz questions error: {questions_data.get('errors')}")
-                                return {'error': f'Failed to fetch instructor quiz questions.', 'statusCode': response.status}
+                                return {'error': f'Failed to fetch instructor quiz questions.', 'statusCode': res.status}
 
                             return (
                             [
                                 {
-                                    "id": question.get("id"),
+                                    "id": str(question.get("id")),
                                     "question_text": (question.get("entry") or {}).get("item_body"),
                                     "quiz_id": str(quiz_id)
                                 } for question in questions_data
+                                if question.get("entry_type") != "Stimulus"
                             ])
+                        else:
+                            logger.error(f"Canvas instructor quiz questions error: {res.status} - {await res.text()}")
+                            return {'error': f'Failed to fetch instructor quiz questions: {res.status}', 'statusCode': res.status}
                         
                 # Could not find quiz.
                 case None:
