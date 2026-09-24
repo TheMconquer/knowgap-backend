@@ -19,7 +19,9 @@ from services.achieveup_service import (
     get_assigned_skills,
     delete_skill_matrix,  # Add new import
     get_course_description,
-    upsert_course_description
+    upsert_course_description,
+    get_course_channels, # Add new channel imports
+    update_course_channels
 )
 import logging
 
@@ -861,6 +863,68 @@ async def instructor_skill_matrix_create_route():
         return jsonify(result), 201
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
+
+@achieveup_bp.route('/achieveup/instructor/courses/<course_id>/channels', methods=['GET'])
+async def get_channels_endpoint(course_id):
+    """
+    Retrieve configured YouTube channels for a course.
+    """
+    try:
+        channels = await get_course_channels(course_id)
+        return jsonify({
+            "success": True,
+            "course_id": str(course_id),
+            "channels": channels
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Failed to retrieve channels: {str(e)}"
+        }), 500
+
+@achieveup_bp.route('/achieveup/instructor/courses/<course_id>/channels', methods=['PUT'])
+async def update_channels_endpoint(course_id):
+    """
+    Save or update preferred YouTube channels for a course.
+    Expected JSON Body: { "channels": ["@3Blue1Brown", "@freecodecamp"] }
+    """
+    try:
+        data = await request.get_json()
+        
+        if not data or "channels" not in data:
+            return jsonify({
+                "success": False,
+                "error": "Missing 'channels' array in request body."
+            }), 400
+
+        channels_list = data.get("channels", [])
+        if not isinstance(channels_list, list):
+            return jsonify({
+                "success": False,
+                "error": "'channels' must be a list of channel handles or IDs."
+            }), 400
+
+        success = await update_course_channels(course_id, channels_list)
+        
+        if success:
+            updated_channels = await get_course_channels(course_id)
+            return jsonify({
+                "success": True,
+                "message": "Course channels updated successfully.",
+                "course_id": str(course_id),
+                "channels": updated_channels
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to save channels to the database."
+            }), 500
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Server error: {str(e)}"
+        }), 500
 
 @achieveup_bp.route('/achieveup/instructor/courses/<course_id>/analytics', methods=['GET'])
 async def instructor_course_analytics_route(course_id):

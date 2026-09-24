@@ -2006,3 +2006,57 @@ async def get_import_status(token: str, course_id: str) -> dict:
         logger.error(f"Get import status error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
     
+
+# Adding functions to manage YouTube channels for courses
+async def get_course_channels(course_id: str) -> list:
+    """
+    Fetch configured YouTube channels for a given course ID.
+    Returns a list of channel handles/IDs or an empty list if none found.
+    """
+    try:
+        db = get_db()
+        # Checks the course settings/metadata document
+        course_doc = await db.course_settings.find_one({"course_id": str(course_id)})
+        
+        if course_doc and "youtube_channels" in course_doc:
+            return course_doc["youtube_channels"]
+            
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching channels for course {course_id}: {str(e)}")
+        return []
+
+async def update_course_channels(course_id: str, channels: list) -> bool:
+    """
+    Update or insert configured YouTube channels for a given course ID.
+    """
+    try:
+        # REMOVE 'await' HERE: get_db() returns the database instance directly
+        db = get_db() 
+        
+        # Clean and sanitize input (remove duplicates & whitespace)
+        clean_channels = list(dict.fromkeys([
+            c.strip() for c in channels if isinstance(c, str) and c.strip()
+        ]))
+        
+        # Perform the async update on the Motor collection
+        result = await db.course_settings.update_one(
+            {"course_id": str(course_id)},
+            {"$set": {
+                "course_id": str(course_id),
+                "youtube_channels": clean_channels
+            }},
+            upsert=True
+        )
+        
+        if result.acknowledged:
+            logger.info(f"Successfully saved channels for course {course_id}: {clean_channels}")
+            return True
+            
+        logger.warning(f"MongoDB operation was not acknowledged for course {course_id}")
+        return False
+
+    except Exception as e:
+        logger.error(f"MongoDB Error in update_course_channels for course {course_id}: {str(e)}", exc_info=True)
+        print(f"\n[DATABASE ERROR] update_course_channels failed: {str(e)}\n")
+        return False

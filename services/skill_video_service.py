@@ -11,6 +11,7 @@ from services.achieveup_service import (
     achieveup_question_skills_collection,
     achieveup_skill_matrices_collection,
     achieveup_course_descriptions_collection,
+    get_course_channels
 )
 from utils.ai_utils import generate_skill_search_topics
 from utils.youtube_utils import fetch_videos_for_topic, get_video_metadata, fetch_video_transcript
@@ -309,16 +310,45 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
             existing_links.add(existing['link'])
 
         candidates = []
-        for topic in topics_result['topics']:
-            videos = await fetch_videos_for_topic(topic, limit=count)
-            for video in videos:
-                if video.get('link') and video['link'] not in existing_links:
-                    existing_links.add(video['link'])
-                    candidates.append(video)
+
+        # A. Get instructor-configured preferred channels for this course
+        configured_channels = await get_course_channels(course_id)
+
+        # B. Priority Pass: Search using configured channel handles first
+        if configured_channels:
+            logger.info(f"Prioritizing search across configured channels: {configured_channels}")
+            for topic in topics_result['topics']:
                 if len(candidates) >= count:
                     break
-            if len(candidates) >= count:
-                break
+                for channel in configured_channels:
+                    if len(candidates) >= count:
+                        break
+                    
+                    # Target query: e.g. "Topic Name @3Blue1Brown"
+                    channel_topic_query = f"{topic} {channel}"
+                    channel_videos = await fetch_videos_for_topic(channel_topic_query, limit=count)
+                    
+                    for video in channel_videos:
+                        if video.get('link') and video['link'] not in existing_links:
+                            existing_links.add(video['link'])
+                            candidates.append(video)
+                        if len(candidates) >= count:
+                            break
+
+        # C. Fallback Pass: Standard global search if more candidate videos are still needed
+        if len(candidates) < count:
+            logger.info(f"Fallback to standard YouTube search. Current candidate count: {len(candidates)}/{count}")
+            for topic in topics_result['topics']:
+                if len(candidates) >= count:
+                    break
+                
+                videos = await fetch_videos_for_topic(topic, limit=count)
+                for video in videos:
+                    if video.get('link') and video['link'] not in existing_links:
+                        existing_links.add(video['link'])
+                        candidates.append(video)
+                    if len(candidates) >= count:
+                        break
 
         # 5. Insert as published — visible to students immediately, tagged ai_suggested
         now = _now()
