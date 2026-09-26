@@ -16,3 +16,7 @@ def hash_text(string: str) -> str:
     text_hash = hashlib.new("sha256")
     text_hash.update(string.encode("utf-8"))
     return text_hash.hexdigest()
+
+def build_question_hash(raw_key: str) -> str:
+    normalized = normalize_text(raw_key)
+    return hash_text(normalized)

@@ -14,6 +14,7 @@ from services.achieveup_canvas_demo_service import (
     validate_demo_canvas_token
 )
 from config import Config
+from utils import text_utils
 
 from mongodb import get_db
 
@@ -654,12 +655,15 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                 if src:
                                     attachment_urls.append(src)
 
+                        answers = question.get('answers', [])
+                        answer_texts = [text_utils.normalize_text(a.get('text', '')) for a in answers if a.get('text', '').strip()]
                         questions.append({
                             'id': str(question.get('id')),
                             'question_text': question_text,
                             'quiz_id': str(quiz_id),
                             'attachment_ids': attachment_ids,
-                            'attachment_urls': attachment_urls
+                            'attachment_urls': attachment_urls,
+                            'answer_texts': answer_texts
                         })
                     return questions
                 else:
