@@ -5,6 +5,7 @@ import ssl
 import logging
 import re
 from datetime import datetime, timezone
+from bs4 import BeautifulSoup
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_canvas_demo_service import (
@@ -13,6 +14,7 @@ from services.achieveup_canvas_demo_service import (
     validate_demo_canvas_token
 )
 from config import Config
+from utils import text_utils
 
 from mongodb import get_db
 
@@ -639,10 +641,30 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                     questions_data = await response.json()
                     questions = []
                     for question in questions_data:
+                        question_text = question.get('question_text', '')
+    
+                        # Extract Canvas file IDs from any embedded images
+                        soup = BeautifulSoup(question_text, 'html.parser')
+                        attachment_ids = []
+                        attachment_urls = []
+                        for img in soup.find_all('img'):
+                            endpoint = img.get('data-api-endpoint', '')
+                            src = img.get('src', '')
+                            if '/files/' in endpoint:
+                                file_id = endpoint.split('/files/')[-1].split('/')[0]
+                                attachment_ids.append(file_id)
+                                if src:
+                                    attachment_urls.append(src)
+
+                        answers = question.get('answers', [])
+                        answer_texts = [text_utils.normalize_text(a.get('text', '')) for a in answers if a.get('text', '').strip()]
                         questions.append({
                             'id': str(question.get('id')),
-                            'question_text': question.get('question_text', ''),
-                            'quiz_id': str(quiz_id)
+                            'question_text': question_text,
+                            'quiz_id': str(quiz_id),
+                            'attachment_ids': attachment_ids,
+                            'attachment_urls': attachment_urls,
+                            'answer_texts': answer_texts
                         })
                     return questions
                 else:
