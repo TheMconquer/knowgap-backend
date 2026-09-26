@@ -443,7 +443,7 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
         enriched_badges.sort(key=lambda x: x.get('earned_at', datetime.min), reverse=True)
         
         # Get student name from first badge if available
-        student_name = next((b.get('student_name') for b in enriched_badges if b.get('student_name')), None)
+        student_name = next((b.get('student_name') for b in badges if b.get('student_name')), None)
         
         return {
             'student_id': student_id,
@@ -461,7 +461,9 @@ async def _resolve_public_student_name(badges: list, student_id: str) -> str:
 
     Tries the name cached on an existing badge first (fast, no network call).
     Falls back to a live Canvas roster lookup, scoped to the instructor who
-    actually owns each course
+    actually owns each course (via that course's skill matrix created_by)
+    -- never an arbitrary instructor's token. If no source has a name,
+    returns None; callers must show "unknown", never substitute a fake one.
     """
     cached_name = next((b.get('student_name') for b in badges if b.get('student_name')), None)
     if cached_name:
