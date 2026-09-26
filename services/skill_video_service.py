@@ -312,7 +312,7 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
         candidates = []
 
         # A. Get instructor-configured preferred channels for this course
-        configured_channels = await get_course_channels(course_id)
+        configured_channels = await get_course_channels(token, course_id)
 
         # B. Priority Pass: Search using configured channel handles first
         if configured_channels:

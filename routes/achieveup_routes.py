@@ -870,7 +870,17 @@ async def get_channels_endpoint(course_id):
     Retrieve configured YouTube channels for a course.
     """
     try:
-        channels = await get_course_channels(course_id)
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+        channels = await get_course_channels(token, course_id)
         return jsonify({
             "success": True,
             "course_id": str(course_id),
@@ -879,7 +889,7 @@ async def get_channels_endpoint(course_id):
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": f"Failed to retrieve channels: {str(e)}"
+            "error": "An unexpected error occurred in GET.",
         }), 500
 
 @achieveup_bp.route('/achieveup/instructor/courses/<course_id>/channels', methods=['PUT'])
@@ -889,6 +899,16 @@ async def update_channels_endpoint(course_id):
     Expected JSON Body: { "channels": ["@3Blue1Brown", "@freecodecamp"] }
     """
     try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+        
+        token = auth_header.split(' ')[1]
         data = await request.get_json()
         
         if not data or "channels" not in data:
@@ -904,10 +924,10 @@ async def update_channels_endpoint(course_id):
                 "error": "'channels' must be a list of channel handles or IDs."
             }), 400
 
-        success = await update_course_channels(course_id, channels_list)
+        success = await update_course_channels(token, course_id, channels_list)
         
         if success:
-            updated_channels = await get_course_channels(course_id)
+            updated_channels = await get_course_channels(token, course_id)
             return jsonify({
                 "success": True,
                 "message": "Course channels updated successfully.",
@@ -923,7 +943,7 @@ async def update_channels_endpoint(course_id):
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": f"Server error: {str(e)}"
+            "error": "An unexpected error occurred in PUT.",
         }), 500
 
 @achieveup_bp.route('/achieveup/instructor/courses/<course_id>/analytics', methods=['GET'])

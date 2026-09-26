@@ -2008,12 +2008,17 @@ async def get_import_status(token: str, course_id: str) -> dict:
     
 
 # Adding functions to manage YouTube channels for courses
-async def get_course_channels(course_id: str) -> list:
+async def get_course_channels(token: str, course_id: str) -> list:
     """
     Fetch configured YouTube channels for a given course ID.
     Returns a list of channel handles/IDs or an empty list if none found.
     """
+    # Verify user token
     try:
+        user_result = await achieveup_verify_token(token)
+        if 'error' in user_result:
+            return user_result
+
         db = get_db()
         # Checks the course settings/metadata document
         course_doc = await db.course_settings.find_one({"course_id": str(course_id)})
@@ -2026,11 +2031,16 @@ async def get_course_channels(course_id: str) -> list:
         logger.error(f"Error fetching channels for course {course_id}: {str(e)}")
         return []
 
-async def update_course_channels(course_id: str, channels: list) -> bool:
+async def update_course_channels(token: str, course_id: str, channels: list) -> bool:
     """
     Update or insert configured YouTube channels for a given course ID.
     """
     try:
+        # Verify user token
+        user_result = await achieveup_verify_token(token)
+        if 'error' in user_result:
+            return False
+
         # REMOVE 'await' HERE: get_db() returns the database instance directly
         db = get_db() 
         
