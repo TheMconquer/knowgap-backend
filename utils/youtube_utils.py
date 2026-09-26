@@ -1,5 +1,5 @@
 # utils/youtube_utils.py
-from youtubesearchpython import VideosSearch
+from youtubesearchpython import VideosSearch, ChannelSearch, ResultMode
 import re
 from googleapiclient.discovery import build
 from config import Config
@@ -68,7 +68,47 @@ async def fetch_video_for_topic(topic):
         return {}
     
 
+async def fetch_videos_for_topic_and_channel(topic, channel_id, limit=3):
+    """
+    Fetch multiple candidate videos for a given topic from a specific YouTube channel.
 
+    Parameters:
+    - topic (str): The topic to search for.
+    - channel_id (str): The YouTube channel ID to restrict the search to.
+    - limit (int): Maximum number of videos to return.
+
+    Returns:
+    - list[dict]: A list of video metadata dicts (title, link, channel, thumbnail),
+                  or an empty list if no videos are found.
+    """
+    try:
+        logging.debug(f"Starting search for topic: {topic} in channel: {channel_id} (limit={limit})")
+        search = ChannelSearch(topic, channel_id=channel_id, limit=limit, mode=ResultMode.json)
+        search_results = search.result()
+        results = search_results.get('result', [])
+
+        # Filter results by channel ID
+        filtered_results = [video for video in results if video.get('channel', {}).get('id') == channel_id]
+
+        if not filtered_results:
+            logging.warning(f"No results found for topic '{topic}' in channel '{channel_id}'")
+            return []
+
+        videos = []
+        for video in filtered_results[:limit]:
+            videos.append({
+                'title': clean_metadata_text(video.get('title', 'No Title Found')),
+                'link': video.get('link', 'No Link Found'),
+                'channel': video.get('channel', {}).get('name', 'No Channel Found'),
+                'thumbnail': video.get('thumbnails', [{}])[0].get('url', 'No Thumbnail Found')
+            })
+
+        logging.debug(f"Extracted {len(videos)} videos for topic '{topic}' in channel '{channel_id}'")
+        return videos
+
+    except Exception as e:
+        logging.error(f"Error fetching videos for topic '{topic}' in channel '{channel_id}': {e}")
+        return []
 
 
 
