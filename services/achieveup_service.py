@@ -43,6 +43,7 @@ achieveup_progress_collection = db[Config.ACHIEVEUP_PROGRESS_COLLECTION]
 achieveup_analytics_collection = db[Config.ACHIEVEUP_ANALYTICS_COLLECTION]
 achieveup_course_descriptions_collection = db[Config.ACHIEVEUP_COURSE_DESCRIPTIONS_COLLECTION]
 achieveup_import_status_collection = db[Config.ACHIEVEUP_IMPORT_STATUS_COLLECTION]
+achieveup_course_channels_collection = db[Config.ACHIEVEUP_COURSE_CHANNELS_COLLECTION]
 
 MAX_COURSE_DESCRIPTION_LENGTH = 12000
 
@@ -2019,9 +2020,8 @@ async def get_course_channels(token: str, course_id: str) -> list:
         if 'error' in user_result:
             return user_result
 
-        db = get_db()
         # Checks the course settings/metadata document
-        course_doc = await db.course_settings.find_one({"course_id": str(course_id)})
+        course_doc = await achieveup_course_channels_collection.find_one({"course_id": str(course_id)})
         
         if course_doc and "youtube_channels" in course_doc:
             return course_doc["youtube_channels"]
@@ -2040,9 +2040,6 @@ async def update_course_channels(token: str, course_id: str, channels: list) -> 
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return False
-
-        # REMOVE 'await' HERE: get_db() returns the database instance directly
-        db = get_db() 
         
         # Clean and sanitize input (remove duplicates & whitespace)
         clean_channels = list(dict.fromkeys([
@@ -2050,7 +2047,7 @@ async def update_course_channels(token: str, course_id: str, channels: list) -> 
         ]))
         
         # Perform the async update on the Motor collection
-        result = await db.course_settings.update_one(
+        result = await achieveup_course_channels_collection.update_one(
             {"course_id": str(course_id)},
             {"$set": {
                 "course_id": str(course_id),
@@ -2068,5 +2065,4 @@ async def update_course_channels(token: str, course_id: str, channels: list) -> 
 
     except Exception as e:
         logger.error(f"MongoDB Error in update_course_channels for course {course_id}: {str(e)}", exc_info=True)
-        print(f"\n[DATABASE ERROR] update_course_channels failed: {str(e)}\n")
         return False
