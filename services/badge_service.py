@@ -497,74 +497,175 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
         logger.error(f"Get student earned badges error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500} 
 
-async def get_public_student_earned_badges(student_id: str) -> dict:
-    """Get all earned badges for a specific student with course information publicly."""
+async def _resolve_public_student_name(badges: list, student_id: str) -> str:
+    """Best-effort display name for a public badge profile.
+
+    Tries the name cached on an existing badge first (fast, no network call).
+    Falls back to a live Canvas roster lookup, scoped to the instructor who
+    actually owns each course
+    """
+    cached_name = next((b.get('student_name') for b in badges if b.get('student_name')), None)
+    if cached_name:
+        return cached_name
+
     try:
+        from services.achieveup_auth_service import get_user_canvas_token
+        from services.achieveup_canvas_service import get_course_students
+
+        course_ids = {str(b.get('course_id')) for b in badges if b.get('course_id')}
+        for course_id in course_ids:
+            matrix = await achieveup_skill_matrices_collection.find_one({
+                '$or': [
+                    {'course_id': course_id},
+                    {'course_id': int(course_id) if course_id.isdigit() else course_id}
+                ]
+            })
+            instructor_id = matrix.get('created_by') if matrix else None
+            if not instructor_id:
+                continue
+
+            canvas_token = await get_user_canvas_token(instructor_id)
+            if not canvas_token:
+                continue
+
+            students = await get_course_students(canvas_token, course_id)
+            if not isinstance(students, list):
+                continue
+            match = next((s for s in students if str(s.get('id')) == str(student_id)), None)
+            if match:
+                return match.get('name') or match.get('sortable_name')
+    except Exception as e:
+        logger.warning(f"Could not resolve display name for student {student_id}: {e}")
+
+    return None
+
+
+def _public_badge_view(badge: dict) -> dict:
+    """Reshape a raw badge document into the subset safe to expose publicly."""
+    skill_name = badge.get('skill_name')
+    if not skill_name or skill_name == 'Skill':
+        skill_name = badge.get('skill_id') or 'Skill'
+
+    level = (badge.get('badge_level') or 'Skill').title()
+    badge_name = badge.get('badge_name')
+    if not badge_name or badge_name == 'Skill' or 'in Skill' in badge_name:
+        badge_name = f"{level} in {skill_name}"
+
+    return {
+        'badge_id': badge.get('badge_id'),
+        'badge_name': badge_name,
+        'skill_name': skill_name,
+        'badge_level': badge.get('badge_level'),
+        'progress_percentage': badge.get('progress_percentage'),
+        'earned_at': badge.get('earned_at'),
+        'course_id': badge.get('course_id'),
+        'course_name': badge.get('course_name')
+    }
+
+
+async def get_public_badges_by_share(share_id: str) -> dict:
+    """Get all earned badges for whichever student owns this share link."""
+    try:
+        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
+
+        # Resolve the student from the share token — never from client input.
+        # An unknown or revoked share_id (badge_share_enabled False, or the
+        # field unset entirely after unshare) simply won't match here.
+        share_owner = await users_collection.find_one({
+            'badge_share_id': share_id,
+            'badge_share_enabled': True
+        })
+        if not share_owner:
+            return {
+                'error': 'Not found',
+                'message': 'This share link is invalid or no longer active',
+                'statusCode': 404
+            }
+
+        student_id = share_owner['user_id']
+
         # Get all badges for the student. A badge document only exists because
         # it already crossed its tier threshold at creation time (see
         # tier_for_score) — no re-filtering by current percentage needed here.
-        badges = [badge_doc async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0})]
+        badges = [
+            b async for b in
+            achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0})
+        ]
+        badges.sort(key=lambda b: b.get('earned_at', datetime.min), reverse=True)
 
-        # Sort by earned date (newest first)
-        badges.sort(key=lambda x: x.get('earned_at', datetime.min), reverse=True)
-        
-        # Look up student name from existing badges first (quickest)
-        student_name = next((b.get('student_name') for b in badges if b.get('student_name')), None)
-        
-        if not student_name:
-            # Fallback to looking up student name via Canvas API enrollments (slower)
-            try:
-                instructor_doc = await db[Config.ACHIEVEUP_USERS_COLLECTION].find_one({
-                    'canvas_token_type': 'instructor',
-                    'canvas_api_token': {'$exists': True, '$ne': None}
-                })
-                if instructor_doc:
-                    from services.achieveup_auth_service import get_user_canvas_token
-                    canvas_token = await get_user_canvas_token(instructor_doc['user_id'])
-                    if canvas_token:
-                        from services.achieveup_canvas_service import get_course_students
-                        course_ids = list(set(str(b.get('course_id')) for b in badges if b.get('course_id')))
-                        # Try courses until we find the student's name
-                        for current_course_id in course_ids:
-                            students = await get_course_students(canvas_token, current_course_id)
-                            if isinstance(students, list):
-                                for student in students:
-                                    if str(student.get('id')) == str(student_id):
-                                        student_name = student.get('name') or student.get('sortable_name')
-                                        break
-                            if student_name:
-                                break
-            except Exception as e:
-                logger.warning(f"Could not look up student name for {student_id}: {e}")
-
-        # Enrich for public view with robust name fallbacks
-        final_badges = []
-        for badge in badges:
-            b_name = badge.get('badge_name')
-            # Treat 'Skill' as a bad/generic value — fall through to skill_id
-            raw_skill = badge.get('skill_name')
-            if raw_skill and raw_skill != 'Skill':
-                s_name = raw_skill
-            else:
-                s_name = badge.get('skill_id') or 'Skill'
-            level = badge.get('badge_level', 'Skill').title()
-            
-            if not b_name or b_name == 'Skill' or 'in Skill' in b_name:
-                b_name = f"{level} in {s_name}"
-                
-            final_badges.append({
-                **badge,
-                'badge_name': b_name,
-                'skill_name': s_name,
-            })
+        student_name = await _resolve_public_student_name(badges, student_id)
 
         return {
-            'student_id': student_id,
             'student_name': student_name,
-            'total_badges': len(final_badges),
-            'badges': final_badges
+            'total_badges': len(badges),
+            'badges': [_public_badge_view(b) for b in badges]
         }
-        
+
     except Exception as e:
-        logger.error(f"Get public student earned badges error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500} 
+        logger.error(f"Get public badges by share error: {str(e)}")
+        return {'error': 'Internal server error', 'statusCode': 500}
+
+async def share_student_badge_profile(token: str) -> dict:
+    """Enable public sharing of the caller's own badge profile and return the share link."""
+    try:
+        user_result = await achieveup_verify_token(token)
+        if 'error' in user_result:
+            return user_result
+
+        user_id = user_result['user']['id']
+
+        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
+        user_doc = await users_collection.find_one({'user_id': user_id})
+        # Reuse an existing share_id so re-sharing doesn't invalidate a link
+        # the student already handed out.
+        share_id = (user_doc or {}).get('badge_share_id') or str(uuid.uuid4())
+        share_link = f"https://achieveup.ucf.edu/badges/share/{share_id}"
+
+        await users_collection.update_one(
+            {'user_id': user_id},
+            {'$set': {
+                'badge_share_id': share_id,
+                'badge_share_enabled': True,
+                'badge_shared_at': datetime.now(timezone.utc).replace(tzinfo=None)
+            }}
+        )
+
+        return {
+            'message': 'Badge profile shared successfully',
+            'share_link': share_link,
+            'share_id': share_id
+        }
+
+    except Exception as e:
+        logger.error(f"Share student badge profile error: {str(e)}")
+        return {'error': 'Internal server error', 'statusCode': 500}
+
+async def unshare_student_badge_profile(token: str) -> dict:
+    """Disable public sharing of the caller's own badge profile."""
+    try:
+        user_result = await achieveup_verify_token(token)
+        if 'error' in user_result:
+            return user_result
+
+        user_id = user_result['user']['id']
+
+        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
+        # Drop badge_share_id entirely (rather than just disabling it) so a
+        # revoked link can never come back to life if the student shares
+        # again later — share_student_badge_profile will mint a fresh one.
+        await users_collection.update_one(
+            {'user_id': user_id},
+            {
+                '$set': {
+                    'badge_share_enabled': False,
+                    'badge_unshared_at': datetime.now(timezone.utc).replace(tzinfo=None)
+                },
+                '$unset': {'badge_share_id': ''}
+            }
+        )
+
+        return {'message': 'Badge profile is no longer public'}
+
+    except Exception as e:
+        logger.error(f"Unshare student badge profile error: {str(e)}")
+        return {'error': 'Internal server error', 'statusCode': 500}

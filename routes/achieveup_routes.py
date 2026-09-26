@@ -553,14 +553,15 @@ async def get_student_earned_badges_route(student_id):
             'statusCode': 500
         }), 500
 
-@achieveup_bp.route('/achieveup/public/badges/student/<student_id>/earned', methods=['GET'])
-async def get_public_student_earned_badges_route(student_id):
-    """Get all earned badges for a specific student publicly. (AchieveUp only)"""
+@achieveup_bp.route('/achieveup/public/badges/share/<share_id>/earned', methods=['GET'])
+async def get_public_badges_by_share_route(share_id):
+    """Get all earned badges for a student's publicly shared badge profile. (AchieveUp only)"""
     try:
-        from services.badge_service import get_public_student_earned_badges
-        # Call badge service directly without token verification
-        result = await get_public_student_earned_badges(student_id)
-        
+        from services.badge_service import get_public_badges_by_share
+        # Public by design: access is gated by the unguessable share_id itself,
+        # not a token — the student must have explicitly opted in to sharing.
+        result = await get_public_badges_by_share(share_id)
+
         if 'error' in result:
             return jsonify({
                 'error': result['error'],
@@ -569,7 +570,77 @@ async def get_public_student_earned_badges_route(student_id):
             }), result.get('statusCode', 500)
         
         return jsonify(result), 200
-        
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/badges/share-profile', methods=['POST'])
+async def share_student_badge_profile_route():
+    """Enable public sharing of the caller's own badge profile. (AchieveUp only)"""
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+
+        # Call badge service
+        from services.badge_service import share_student_badge_profile
+        result = await share_student_badge_profile(token)
+
+        if 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/badges/unshare-profile', methods=['POST'])
+async def unshare_student_badge_profile_route():
+    """Disable public sharing of the caller's own badge profile. (AchieveUp only)"""
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+
+        # Call badge service
+        from services.badge_service import unshare_student_badge_profile
+        result = await unshare_student_badge_profile(token)
+
+        if 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
     except Exception as e:
         return jsonify({
             'error': 'Internal server error',
