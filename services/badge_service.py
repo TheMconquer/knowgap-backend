@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 # MongoDB setup for AchieveUp badge data (separate from KnowGap)
 db = get_db()
 
-achieveup_badges_collection = db[Config.ACHIEVEUP_BADGES_COLLECTION]
 achieveup_user_badges_collection = db[Config.ACHIEVEUP_USER_BADGES_COLLECTION]
 achieveup_badge_progress_collection = db[Config.ACHIEVEUP_BADGE_PROGRESS_COLLECTION]
 achieveup_student_skill_mastery_collection = db[Config.ACHIEVEUP_STUDENT_SKILL_MASTERY_COLLECTION]
@@ -158,55 +157,6 @@ async def get_badge_details(token: str, badge_id: str) -> dict:
         
     except Exception as e:
         logger.error(f"Get badge details error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
-async def share_badge(token: str, badge_id: str, data: dict) -> dict:
-    """Share a badge (generate shareable link)."""
-    try:
-        # Verify token and get user info
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        user_id = user_result.get('user_id')
-        
-        # Find badge in database
-        badge = await achieveup_user_badges_collection.find_one({
-            'badge_id': badge_id,
-            'user_id': user_id
-        })
-        
-        if not badge:
-            return {
-                'error': 'Badge not found',
-                'message': 'Badge not found or access denied',
-                'statusCode': 404
-            }
-        
-        # Generate shareable link
-        share_id = str(uuid.uuid4())
-        share_link = f"https://achieveup.ucf.edu/badges/{share_id}"
-        
-        # Store shareable link
-        await achieveup_badges_collection.update_one(
-            {'badge_id': badge_id},
-            {'$set': {
-                'share_id': share_id,
-                'share_link': share_link,
-                'shared_at': datetime.now(timezone.utc).replace(tzinfo=None),
-                'share_settings': data.get('settings', {})
-            }},
-            upsert=True
-        )
-        
-        return {
-            'message': 'Badge shared successfully',
-            'share_link': share_link,
-            'share_id': share_id
-        }
-        
-    except Exception as e:
-        logger.error(f"Share badge error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
 async def create_badge_for_student(user_id: str, course_id: str, skill_id: str, badge_level: str, progress_percentage: float, student_name: str = None) -> dict:
@@ -421,7 +371,18 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return user_result
-        
+
+        # This route is self-view only: every real caller passes their own
+        # canvas_student_id. Reject anything else rather than let any valid
+        # login pull another student's badge/course history by guessing an id.
+        caller = user_result['user']
+        if str(caller.get('canvas_student_id')) != str(student_id):
+            return {
+                'error': 'Forbidden',
+                'message': "You do not have access to this student's badges",
+                'statusCode': 403
+            }
+
         # Get all badges for the student. A badge document only exists because
         # it already crossed its tier threshold at creation time (see
         # tier_for_score) — no re-filtering by current percentage needed here.
@@ -429,10 +390,8 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
 
         # Get course names from Canvas API
         from services.achieveup_canvas_service import get_instructor_courses
-        
-        # Get the canvas token from the user document
-        user_doc = await db[Config.ACHIEVEUP_USERS_COLLECTION].find_one({'user_id': user_result.get('user_id')})
-        canvas_token = user_doc.get('canvas_token') if user_doc else None
+        from services.achieveup_auth_service import get_user_canvas_token
+        canvas_token = await get_user_canvas_token(caller['id'])
         
         # Create a map of course_id to course_name
         course_map = {}
