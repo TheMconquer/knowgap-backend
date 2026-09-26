@@ -147,9 +147,11 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
         NEW_Q_URL: str = f"{CANVAS_API_URL}/courses/{course_id}/assignments/{quiz_id}/submissions"
         
         async with create_canvas_session() as session:
-            # Handle pagination
+            is_canvas_new_quiz: bool | None = None
+
             match await is_new_quiz(canvas_token, course_id, quiz_id):
                 case True:
+                    is_canvas_new_quiz = True
                     cont: bool = True
                     params = {
                         'per_page': 100
@@ -224,6 +226,7 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
                             params = {}
 
                 case False:
+                    is_canvas_new_quiz = False
                     params = {
                         'per_page': 100,
                         'include[]': ['submission', 'user']
@@ -268,7 +271,8 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
         
         return {
             'submissions': all_submissions,
-            'count': len(all_submissions)
+            'count': len(all_submissions),
+            "is_new_quiz": is_canvas_new_quiz
         }
         
     except Exception as e:
@@ -563,6 +567,20 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                 # upon every sync interval (since we aggregate across all time)
                 if quiz == quizzes[0]: # Only do this once per course sync
                     await mastery_collection.delete_many({'course_id': str(course_id)})
+
+                if submissions_result.get("is_new_quiz") and submissions:
+                    new_quiz_data = await get_new_quiz_data(canvas_token, course_id, quiz_id)
+
+                    if "error" in new_quiz_data:
+                        total_errors += 1
+
+                        logger.error(f"Failed to get New Quiz results for quiz {quiz_id} ({quiz_title}): {new_quiz_data['error']}")
+
+                        continue
+
+                    new_quiz_submission_results = new_quiz_data.get("results")
+                    for submission in submissions:
+                        submission["questions"] = new_quiz_submission_results.get(str(submission.get("user_id")), [])
                 
                 # Internal helper for parallel question fetching
                 semaphore = asyncio.Semaphore(10) # Limit concurrency to 10 requests
@@ -678,3 +696,5 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
         logger.error(f"Sync course submissions direct error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
+async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> dict:
+    pass
