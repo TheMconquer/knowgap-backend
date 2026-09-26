@@ -58,6 +58,7 @@ class Config:
     ACHIEVEUP_IMPORT_STATUS_COLLECTION = "AchieveUp_Import_Status"
     ACHIEVEUP_SKILL_VIDEOS_COLLECTION = "AchieveUp_Skill_Videos"
     ACHIEVEUP_SKILL_VIDEO_VOTES_COLLECTION = "AchieveUp_Skill_Video_Votes"
+    ACHIEVEUP_COURSE_CHANNELS_COLLECTION = "AchieveUp_Course_Channels"
     
     # AchieveUp configuration
     ACHIEVEUP_JWT_SECRET = os.getenv("ACHIEVEUP_JWT_SECRET", "achieveup-secret-key-change-in-production")

@@ -43,6 +43,7 @@ achieveup_progress_collection = db[Config.ACHIEVEUP_PROGRESS_COLLECTION]
 achieveup_analytics_collection = db[Config.ACHIEVEUP_ANALYTICS_COLLECTION]
 achieveup_course_descriptions_collection = db[Config.ACHIEVEUP_COURSE_DESCRIPTIONS_COLLECTION]
 achieveup_import_status_collection = db[Config.ACHIEVEUP_IMPORT_STATUS_COLLECTION]
+achieveup_course_channels_collection = db[Config.ACHIEVEUP_COURSE_CHANNELS_COLLECTION]
 
 MAX_COURSE_DESCRIPTION_LENGTH = 12000
 
@@ -2006,3 +2007,62 @@ async def get_import_status(token: str, course_id: str) -> dict:
         logger.error(f"Get import status error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
     
+
+# Adding functions to manage YouTube channels for courses
+async def get_course_channels(token: str, course_id: str) -> list:
+    """
+    Fetch configured YouTube channels for a given course ID.
+    Returns a list of channel handles/IDs or an empty list if none found.
+    """
+    # Verify user token
+    try:
+        user_result = await achieveup_verify_token(token)
+        if 'error' in user_result:
+            return user_result
+
+        # Checks the course settings/metadata document
+        course_doc = await achieveup_course_channels_collection.find_one({"course_id": str(course_id)})
+        
+        if course_doc and "youtube_channels" in course_doc:
+            return course_doc["youtube_channels"]
+            
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching channels for course {course_id}: {str(e)}")
+        return []
+
+async def update_course_channels(token: str, course_id: str, channels: list) -> bool:
+    """
+    Update or insert configured YouTube channels for a given course ID.
+    """
+    try:
+        # Verify user token
+        user_result = await achieveup_verify_token(token)
+        if 'error' in user_result:
+            return False
+        
+        # Clean and sanitize input (remove duplicates & whitespace)
+        clean_channels = list(dict.fromkeys([
+            c.strip() for c in channels if isinstance(c, str) and c.strip()
+        ]))
+        
+        # Perform the async update on the Motor collection
+        result = await achieveup_course_channels_collection.update_one(
+            {"course_id": str(course_id)},
+            {"$set": {
+                "course_id": str(course_id),
+                "youtube_channels": clean_channels
+            }},
+            upsert=True
+        )
+        
+        if result.acknowledged:
+            logger.info(f"Successfully saved channels for course {course_id}: {clean_channels}")
+            return True
+            
+        logger.warning(f"MongoDB operation was not acknowledged for course {course_id}")
+        return False
+
+    except Exception as e:
+        logger.error(f"MongoDB Error in update_course_channels for course {course_id}: {str(e)}", exc_info=True)
+        return False
