@@ -1,7 +1,8 @@
 # utils/youtube_utils.py
-from youtubesearchpython import VideosSearch, ChannelSearch, ResultMode
+from youtubesearchpython import VideosSearch
 import re
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from config import Config
 import aiohttp
 import asyncio
@@ -21,6 +22,96 @@ def clean_metadata_text(text: str) -> str:
         str: A cleaned-up version of the text.
     """
     return html.unescape(text)
+
+
+def get_youtube_client():
+    """Builds and returns an authenticated YouTube API client service."""
+    return build('youtube', 'v3', developerKey=Config.YOUTUBE_API_KEY)
+
+async def resolve_channel_id(youtube, channel_identifier: str) -> str | None:
+    """
+    Resolves a channel handle (e.g., '@AmoebaSisters', '@crashcourse') 
+    or returns the channel ID if already formatted as one (starts with 'UC').
+    """
+    clean_id = channel_identifier.strip()
+    
+    # If it's already a UC... channel ID, return as is
+    if clean_id.startswith('UC'):
+        return clean_id
+    
+    # Ensure handle format (e.g., '@AmoebaSisters')
+    handle = clean_id if clean_id.startswith('@') else f"@{clean_id}"    
+    try:
+        response = youtube.channels().list(
+            part='id',
+            forHandle=handle
+        ).execute()
+        
+        items = response.get('items', [])
+        if items:
+            return items[0]['id']
+            
+        logging.warning(f"RESULT: {items}")
+        return None
+
+    except HttpError as e:
+        logging.error(f"HTTP Error resolving handle '{channel_identifier}': {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Error resolving channel handle '{channel_identifier}': {e}")
+        return None
+
+async def fetch_videos_for_topic_and_channel(topic: str, channel_handle: str, limit: int = 3) -> list[dict]:
+    """
+    Fetch candidate videos for a given topic from a specific YouTube channel 
+    using the official YouTube Data API v3.
+    """
+    try:
+        logging.debug(f"Starting API search for topic: {topic} in channel: {channel_handle} (limit={limit})")
+        youtube = get_youtube_client()
+
+        # Step 1: Ensure we have a valid channel ID (UC...)
+        channel_id = await resolve_channel_id(youtube, channel_handle)
+        if not channel_id:
+            logging.warning(f"Invalid channel ID or handle: {channel_handle}")
+            return []
+
+        # Step 2: Execute official YouTube search filtered by channelId
+        search_response = youtube.search().list(
+            q=topic,
+            channelId=channel_id,  # Strictly restricts search to this channel
+            type='video',          # Only retrieve videos
+            part='id,snippet',
+            maxResults=limit
+        ).execute()
+
+        results = search_response.get('items', [])
+
+        if not results:
+            logging.warning(f"No results found for topic '{topic}' in channel '{channel_id}'")
+            return []
+
+        videos = []
+        for item in results:
+            video_id = item['id']['videoId']
+            snippet = item['snippet']
+
+            videos.append({
+                'title': clean_metadata_text(snippet.get('title', 'No Title Found')),
+                'link': f"https://www.youtube.com/watch?v={video_id}",
+                'channel': snippet.get('channelTitle', 'No Channel Found'),
+                'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url', 'No Thumbnail Found')
+            })
+
+        logging.debug(f"Extracted {len(videos)} videos for topic '{topic}' in channel '{channel_id}'")
+        return videos
+
+    except HttpError as e:
+        logging.error(f"YouTube API HttpError for topic '{topic}' in channel '{channel_handle}': {e}")
+        return []
+    except Exception as e:
+        logging.error(f"Unexpected error fetching videos: {e}")
+        return []    
 
 async def fetch_video_for_topic(topic):
     """
