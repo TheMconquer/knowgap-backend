@@ -17,6 +17,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL, is_new_quiz
 from config import Config
+import csv
+import io
 
 from mongodb import get_db
 
@@ -568,9 +570,11 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                 if quiz == quizzes[0]: # Only do this once per course sync
                     await mastery_collection.delete_many({'course_id': str(course_id)})
 
+                # Check if quiz is a new quiz. If it is, get the new quizzes data.
                 if submissions_result.get("is_new_quiz") and submissions:
                     new_quiz_data = await get_new_quiz_data(canvas_token, course_id, quiz_id)
 
+                    # Check for errors.
                     if "error" in new_quiz_data:
                         total_errors += 1
 
@@ -697,4 +701,103 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
         return {'error': 'Internal server error', 'statusCode': 500}
 
 async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> dict:
-    pass
+    "Get equivalent data of classic quiz for a new quiz."
+
+    try:
+        headers: dict = {"Authorization": f"Bearer {canvas_token}"}
+
+        url: str = f"{CANVAS_API_URL.replace('/api/v1', '/api/quiz/v1')}/courses/{course_id}/quizzes/{quiz_id}"
+
+        async with create_canvas_session() as session:
+            async with session.get(f"{url}/items", headers=headers, params={"per_page": 100}) as res:
+                if res.status != 200:
+                    return {"error": f"Failed to get new quiz items: {res.status}", "statusCode": res.status}
+                
+                quiz_data: list = await res.json()
+
+                items: list = [item for item in quiz_data if item.get("entry_type") != "Stimulus"]
+
+                # The report lists questions in quiz order, so make sure the items are in that order too.
+                items_by_position: dict = {item.get("position"): item for item in items}
+                items = [items_by_position[position] for position in sorted(items_by_position)]
+
+            canvas_quiz_report_request: dict = {
+                "quiz_report[report_type]": "student_analysis",
+                "quiz_report[format]": "csv"
+            }
+
+            async with session.post(f"{url}/reports", headers=headers, data=canvas_quiz_report_request) as res:
+                if res.status not in (200, 201):
+                    return {"error": f"Failed to request new quiz report: {res.status}", "statusCode": res.status}
+                
+                progress = await res.json()
+
+                report_progress: dict = progress.get("progress", {})
+
+                for i in range(60):
+                    if report_progress.get("workflow_state") not in ["completed", "failed"]:
+                        await asyncio.sleep(2)
+                        async with session.get(report_progress.get("url"), headers=headers) as resp:
+                            report_progress = await resp.json()
+
+                report_file_url: str = (report_progress.get("results") or {}).get("url", "")
+
+                if report_progress.get("workflow_state", "") != "completed" or not report_file_url:
+                    return {"error": "New quiz report did not finish.", "statusCode": 502}
+                
+                async with session.get(report_file_url, headers=headers) as res:
+                    report_data: str = (await res.text(encoding="utf-8")).lstrip("\ufeff")
+
+                    if res.status != 200 or report_data.startswith('{"errors"'):
+                        logger.error(f"Failed to download new quiz report for quiz {quiz_id}: {report_data[:300]}")
+                        return {"error": "Failed to download new quiz report.", "statusCode": 502}
+                
+        report_file = io.StringIO(report_data)
+        file_rows: list = list(csv.reader(report_file))
+
+        report_headers: list = file_rows[0]
+
+        # Each question in the report takes up 5 columns, starting with its ItemID column:
+        # ItemID, ItemType, <student's answer>, EarnedPoints, Status
+        question_columns: list = [i for i, name in enumerate(report_headers) if name == "ItemID"]
+
+        if len(question_columns) != len(items):
+            return {"error": "New quiz report does not match the quiz's questions.", "statusCode": 502}
+
+        question_results: dict = {}
+        latest_attempts: dict = {}
+
+
+        for row in file_rows[1:]:
+            student_id: str = row[report_headers.index("ID")]
+            attempt: int = int(row[report_headers.index("Attempt")] or 0)
+
+            if attempt < latest_attempts.get(student_id, 0):
+                continue
+
+            latest_attempts[student_id] = attempt
+
+            questions: list = []
+
+            for item, column in zip(items, question_columns):
+                earned_points: float = float(row[column + 3] or 0)
+                points_possible: float = float(item.get("points_possible") or 0)
+                status: str = row[column + 4]
+
+                # Skip answers that are still waiting on manual grading.
+                if status != "Graded":
+                    continue
+
+                questions.append({
+                    "id": str(item.get("id")),
+                    "question_text": (item.get("entry") or {}).get("item_body"),
+                    "correct": points_possible > 0 and earned_points >= points_possible,
+                })
+
+            question_results[student_id] = questions
+
+        return {"results": question_results}
+
+    except Exception as error:
+        logger.error(f"Error trying to retrieve new quiz data: {str(error)}")
+        return {"error": "Internal server error.", "statusCode": 500}
