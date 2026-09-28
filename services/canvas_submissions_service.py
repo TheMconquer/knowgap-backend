@@ -709,6 +709,7 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
 
         url: str = f"{getattr(Config, 'CANVAS_NEW_QUIZ_API_URL')}/courses/{course_id}/quizzes/{quiz_id}"
 
+        # Get quiz questions for a new quiz.
         async with create_canvas_session() as session:
             async with session.get(f"{url}/items", headers=headers, params={"per_page": 100}) as res:
                 if res.status != 200:
@@ -718,14 +719,16 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
 
                 items: list = [item for item in quiz_data if item.get("entry_type") != "Stimulus"]
 
-                # The report lists questions in quiz order, so make sure the items are in that order too.
+                # Sort question items to align with report questions later.
                 items_by_position: dict = {item.get("position"): item for item in items}
                 items = [items_by_position[position] for position in sorted(items_by_position)]
 
+            # Request body to get new quiz report.
             canvas_quiz_report_request: dict = {
                 "quiz_report[report_type]": "student_analysis",
                 "quiz_report[format]": "csv"
             }
+
 
             async with session.post(f"{url}/reports", headers=headers, data=canvas_quiz_report_request) as res:
                 if res.status not in (200, 201):
@@ -735,7 +738,10 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
 
                 report_progress: dict = progress.get("progress", {})
 
+                # Repeatedly check report status.
                 for i in range(60):
+
+                    # Check if report is still generating.
                     if report_progress.get("workflow_state") not in ["completed", "failed"]:
                         await asyncio.sleep(2)
                         async with session.get(report_progress.get("url"), headers=headers) as resp:
@@ -746,6 +752,7 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
                 if report_progress.get("workflow_state", "") != "completed" or not report_file_url:
                     return {"error": "New quiz report did not finish.", "statusCode": 502}
                 
+                # Download new quiz report.
                 async with session.get(report_file_url, headers=headers) as res:
                     report_data: str = (await res.text(encoding="utf-8")).lstrip("\ufeff")
 
@@ -753,13 +760,13 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
                         logger.error(f"Failed to download new quiz report for quiz {quiz_id}: {report_data[:300]}")
                         return {"error": "Failed to download new quiz report.", "statusCode": 502}
                 
+
+        # Use CSV to read the report.
         report_file = io.StringIO(report_data)
         file_rows: list = list(csv.reader(report_file))
 
         report_headers: list = file_rows[0]
 
-        # Each question in the report takes up 5 columns, starting with its ItemID column:
-        # ItemID, ItemType, <student's answer>, EarnedPoints, Status
         question_columns: list = [i for i, name in enumerate(report_headers) if name == "ItemID"]
 
         if len(question_columns) != len(items):
@@ -768,11 +775,12 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
         question_results: dict = {}
         latest_attempts: dict = {}
 
-
+        # Parse every question row in the CSV.
         for row in file_rows[1:]:
             student_id: str = row[report_headers.index("ID")]
             attempt: int = int(row[report_headers.index("Attempt")] or 0)
 
+            # Check if the attempt is the latest attempt.
             if attempt < latest_attempts.get(student_id, 0):
                 continue
 
@@ -780,6 +788,7 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
 
             questions: list = []
 
+            # Parse all question columns.
             for item, column in zip(items, question_columns):
                 earned_points: float = float(row[column + 3] or 0)
                 points_possible: float = float(item.get("points_possible") or 0)
