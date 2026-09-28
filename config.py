@@ -60,7 +60,9 @@ class Config:
     # AchieveUp configuration
     ACHIEVEUP_JWT_SECRET = os.getenv("ACHIEVEUP_JWT_SECRET", "achieveup-secret-key-change-in-production")
     CANVAS_API_URL = os.getenv("CANVAS_API_URL", "https://canvas.instructure.com/api/v1")
-    
+    CANVAS_GRAPHQL_API_URL = os.getenv("CANVAS_GRAPHQL_API_URL", "https://canvas.instructure.com/api/graphql")
+    CANVAS_NEW_QUIZ_API_URL = os.getenv("CANVAS_NEW_QUIZ_API_URL", "https://canvas.instructure.com/api/quiz/v1")
+
     # Canvas API Configuration
     CANVAS_API_RATE_LIMIT = int(os.getenv("CANVAS_API_RATE_LIMIT", "100"))  # requests per minute
     SUBMISSION_CACHE_TTL = int(os.getenv("SUBMISSION_CACHE_TTL", "3600"))  # 1 hour in seconds

@@ -143,10 +143,9 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
         }
         
         url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
+        new_quiz_url: str = f"{CANVAS_API_URL}/courses/{course_id}/assignments/{quiz_id}/submissions"
 
         all_submissions: list = []
-        
-        NEW_Q_URL: str = f"{CANVAS_API_URL}/courses/{course_id}/assignments/{quiz_id}/submissions"
         
         async with create_canvas_session() as session:
             is_canvas_new_quiz: bool | None = None
@@ -159,8 +158,9 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
                         'per_page': 100
                     }
 
+                    # While loop to ensure response pages are also parsed.
                     while cont:
-                        async with session.get(NEW_Q_URL, headers=headers, params=params) as response:
+                        async with session.get(new_quiz_url, headers=headers, params=params) as response:
                             if response.status != 200:
                                 error_text = await response.text()
                                 logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
@@ -179,6 +179,7 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
                                     "statusCode": 400
                                 }
 
+                            # Mapping new quiz fields to the same fields classic quizzes returns.
                             all_submissions.extend([
                                 {
                                     'attempt': submission.get('attempt'),
@@ -220,7 +221,7 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
                                 # Parse next URL from Link header
                                 for link in link_header.split(','):
                                     if 'rel="next"' in link:
-                                        NEW_Q_URL = link.split(';')[0].strip('<> ')
+                                        new_quiz_url = link.split(';')[0].strip('<> ')
                                         break
                             else:
                                 cont = False
@@ -706,7 +707,7 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
     try:
         headers: dict = {"Authorization": f"Bearer {canvas_token}"}
 
-        url: str = f"{CANVAS_API_URL.replace('/api/v1', '/api/quiz/v1')}/courses/{course_id}/quizzes/{quiz_id}"
+        url: str = f"{getattr(Config, 'CANVAS_NEW_QUIZ_API_URL')}/courses/{course_id}/quizzes/{quiz_id}"
 
         async with create_canvas_session() as session:
             async with session.get(f"{url}/items", headers=headers, params={"per_page": 100}) as res:
