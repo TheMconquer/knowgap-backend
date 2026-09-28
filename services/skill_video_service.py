@@ -515,12 +515,6 @@ async def find_relevant_moment(token: str, video_id: str) -> dict:
         if not video:
             return {'error': 'Video not found', 'statusCode': 404}
 
-        if video.get('source') != 'manual':
-            return {
-                'error': 'Not supported for AI-suggested videos',
-                'message': 'Finding a relevant moment is only available for videos you added yourself.',
-                'statusCode': 400
-            }
 
         transcript_result = await fetch_video_transcript(video['link'])
         if not transcript_result.get('success'):
