@@ -598,8 +598,15 @@ async def get_student_progress(token: str, student_id: str, course_id: str) -> d
                 'skill_progress': {},
                 'last_updated': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             }
-        
-        return progress
+
+        return {
+            'student_id': progress.get('student_id', student_id),
+            'course_id': progress.get('course_id', course_id),
+            'skill_progress': progress.get('skill_progress', {}),
+            'last_updated': progress['last_updated'].isoformat()
+            if isinstance(progress.get('last_updated'), datetime)
+            else progress.get('last_updated')
+        }
         
     except Exception as e:
         logger.error(f"Get student progress error: {str(e)}")
