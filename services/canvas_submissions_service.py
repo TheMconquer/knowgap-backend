@@ -739,11 +739,11 @@ async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> 
                 report_progress: dict = progress.get("progress", {})
 
                 # Repeatedly check report status.
-                for i in range(60):
+                for i in range(120):
 
                     # Check if report is still generating.
                     if report_progress.get("workflow_state") not in ["completed", "failed"]:
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(3)
                         async with session.get(report_progress.get("url"), headers=headers) as resp:
                             report_progress = await resp.json()
 
