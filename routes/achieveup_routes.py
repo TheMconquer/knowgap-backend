@@ -536,11 +536,11 @@ async def get_student_earned_badges_route(student_id):
         # Call badge service
         from services.badge_service import get_student_earned_badges
         result = await get_student_earned_badges(token, student_id)
-        
+
         if 'error' in result:
             return jsonify({
                 'error': result['error'],
-                'message': result['error'],
+                'message': result.get('message', result['error']),
                 'statusCode': result['statusCode']
             }), result['statusCode']
         
@@ -631,6 +631,41 @@ async def unshare_student_badge_profile_route():
         # Call badge service
         from services.badge_service import unshare_student_badge_profile
         result = await unshare_student_badge_profile(token)
+
+        if 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/badges/share-status', methods=['GET'])
+async def get_badge_share_status_route():
+    """Check whether the caller's badge profile is currently publicly shared. (AchieveUp only)"""
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+
+        # Call badge service
+        from services.badge_service import get_badge_share_status
+        result = await get_badge_share_status(token)
 
         if 'error' in result:
             return jsonify({

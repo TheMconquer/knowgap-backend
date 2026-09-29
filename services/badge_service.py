@@ -630,3 +630,31 @@ async def unshare_student_badge_profile(token: str) -> dict:
     except Exception as e:
         logger.error(f"Unshare student badge profile error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
+
+async def get_badge_share_status(token: str) -> dict:
+    """Check whether the caller's badge profile is currently publicly shared.
+
+    Read-only by design: unlike share_student_badge_profile, this must never
+    enable or change sharing as a side effect of just checking status.
+    """
+    try:
+        user_result = await achieveup_verify_token(token)
+        if 'error' in user_result:
+            return user_result
+
+        user_id = user_result['user']['id']
+
+        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
+        user_doc = await users_collection.find_one({'user_id': user_id}) or {}
+
+        share_id = user_doc.get('badge_share_id')
+        shared = bool(share_id) and bool(user_doc.get('badge_share_enabled'))
+
+        return {
+            'shared': shared,
+            'share_link': f"https://achieveup.ucf.edu/badges/share/{share_id}" if shared else None
+        }
+
+    except Exception as e:
+        logger.error(f"Get badge share status error: {str(e)}")
+        return {'error': 'Internal server error', 'statusCode': 500}
