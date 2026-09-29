@@ -359,7 +359,7 @@ async def assign_skills_to_questions(token: str, course_id: str, question_skills
 
             await achieveup_question_skills_collection.update_one(
                 {'question_id': question_hash, 'owner_id': user_id},
-                {'$set': assignment_doc},
+                {'$set': assignment_doc, '$addToSet': {'course_ids': course_id}},
                 upsert=True
             )
 
