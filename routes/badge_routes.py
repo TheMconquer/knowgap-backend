@@ -3,9 +3,7 @@ from services.badge_service import (
     generate_badges_for_user,
     get_user_badges,
     get_badge_details,
-    share_badge,
-    get_badge_progress,
-    get_public_student_earned_badges
+    get_badge_progress
 )
 
 badge_bp = Blueprint('badge', __name__)
@@ -124,41 +122,6 @@ async def get_badge_details_route(badge_id):
             'statusCode': 500
         }), 500
 
-@badge_bp.route('/badges/<badge_id>/share', methods=['POST'])
-async def share_badge_route(badge_id):
-    """Share a badge (generate shareable link). (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        data = await request.get_json() or {}
-        
-        # Call badge service
-        result = await share_badge(token, badge_id, data)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
-
 @badge_bp.route('/badges/progress/<skill_id>', methods=['GET'])
 async def get_badge_progress_route(skill_id):
     """Get progress toward earning a badge for a specific skill. (AchieveUp only)"""
@@ -202,41 +165,6 @@ async def get_badge_progress_route(skill_id):
             'message': 'An unexpected error occurred',
             'statusCode': 500
         }), 500
-
-@badge_bp.route('/badges/student/<student_id>/earned', methods=['GET'])
-async def get_student_earned_badges_route(student_id):
-    """Get all earned badges for a specific student with course information. (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        
-        # Call badge service
-        from services.badge_service import get_student_earned_badges
-        result = await get_student_earned_badges(token, student_id)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500 
 
 @badge_bp.route('/badges/web-linked', methods=['POST'])
 async def create_web_linked_badge_route():
@@ -367,39 +295,16 @@ async def instructor_web_linked_badge_route():
         # Call badge service
         from services.badge_service import create_instructor_web_linked_badge
         result = await create_instructor_web_linked_badge(token, data)
-        
+
         if 'error' in result:
             return jsonify({
                 'error': result['error'],
                 'message': result['error'],
                 'statusCode': result['statusCode']
             }), result['statusCode']
-        
-        return jsonify(result), 201
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500 
 
-@badge_bp.route('/badges/public/student/<student_id>/earned', methods=['GET'])
-async def get_public_student_earned_badges_route(student_id):
-    """Get all earned badges for a specific student publicly. (AchieveUp only)"""
-    try:
-        # Call badge service directly without token verification
-        result = await get_public_student_earned_badges(student_id)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result.get('message', result['error']),
-                'statusCode': result.get('statusCode', 500)
-            }), result.get('statusCode', 500)
-        
-        return jsonify(result), 200
-        
+        return jsonify(result), 201
+
     except Exception as e:
         return jsonify({
             'error': 'Internal server error',
