@@ -502,10 +502,8 @@ def _find_best_transcript_bucket(transcript: list, skill_name: str):
 
 
 async def find_relevant_moment(token: str, video_id: str) -> dict:
-    """Instructor opt-in: find the transcript moment most relevant to a manually-added
-    video's skill, and store it as a deep-link timestamp. Not available for AI-suggested
-    videos — those are already short and topic-specific, so a moment search adds cost
-    without much benefit."""
+    """Instructor opt-in: find the transcript moment most relevant to a 
+    video's skill, and store it as a deep-link timestamp."""
     try:
         _, error = await _require_instructor(token)
         if error:
