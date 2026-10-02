@@ -364,7 +364,33 @@ def get_badge_threshold(badge_level: str) -> int:
     }
     return threshold_map.get(badge_level, 0)
 
-async def get_student_earned_badges(token: str, student_id: str) -> dict:
+async def _instructor_teaches_student(canvas_token: str, student_id: str, hint_course_id: str = None) -> bool:
+    """Check real Canvas enrollment for whether this instructor can see the
+    student on a course roster. Checks hint_course_id first (one call) since
+    callers usually already know which course they're looking at; falls back
+    to sweeping the instructor's other courses if that doesn't find a match,
+    so a stale/wrong hint degrades gracefully instead of just failing.
+    """
+    from services.achieveup_canvas_service import get_course_students, get_instructor_courses
+
+    async def course_has_student(course_id: str) -> bool:
+        students = await get_course_students(canvas_token, course_id)
+        return isinstance(students, list) and any(str(s.get('id')) == str(student_id) for s in students)
+
+    if hint_course_id and await course_has_student(hint_course_id):
+        return True
+
+    courses_result = await get_instructor_courses(canvas_token)
+    for course in courses_result.get('courses', []):
+        course_id = str(course.get('id'))
+        if course_id == str(hint_course_id):
+            continue  # already checked above
+        if await course_has_student(course_id):
+            return True
+
+    return False
+
+async def get_student_earned_badges(token: str, student_id: str, course_id: str = None) -> dict:
     """Get all earned badges for a specific student with course information."""
     try:
         # Verify token
@@ -372,11 +398,22 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
         if 'error' in user_result:
             return user_result
 
-        # This route is self-view only: every real caller passes their own
-        # canvas_student_id. Reject anything else rather than let any valid
-        # login pull another student's badge/course history by guessing an id.
+        # Self-view always allowed. Otherwise, an instructor may view a
+        # student they actually teach (verified against real Canvas
+        # enrollment, not just their role) — never any other combination.
         caller = user_result['user']
-        if str(caller.get('canvas_student_id')) != str(student_id):
+        from services.achieveup_auth_service import get_user_canvas_token
+        canvas_token = await get_user_canvas_token(caller['id'])
+
+        is_self = str(caller.get('canvas_student_id')) == str(student_id)
+        is_authorized_instructor = (
+            not is_self
+            and caller.get('role') == 'instructor'
+            and canvas_token
+            and await _instructor_teaches_student(canvas_token, student_id, course_id)
+        )
+
+        if not is_self and not is_authorized_instructor:
             return {
                 'error': 'Forbidden',
                 'message': "You do not have access to this student's badges",
@@ -390,9 +427,7 @@ async def get_student_earned_badges(token: str, student_id: str) -> dict:
 
         # Get course names from Canvas API
         from services.achieveup_canvas_service import get_instructor_courses
-        from services.achieveup_auth_service import get_user_canvas_token
-        canvas_token = await get_user_canvas_token(caller['id'])
-        
+
         # Create a map of course_id to course_name
         course_map = {}
         course_ids = list(set(str(b.get('course_id')) for b in badges if b.get('course_id')))

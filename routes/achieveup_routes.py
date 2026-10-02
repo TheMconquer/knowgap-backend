@@ -532,10 +532,11 @@ async def get_student_earned_badges_route(student_id):
             }), 401
         
         token = auth_header.split(' ')[1]
-        
+        course_id = request.args.get('course_id')
+
         # Call badge service
         from services.badge_service import get_student_earned_badges
-        result = await get_student_earned_badges(token, student_id)
+        result = await get_student_earned_badges(token, student_id, course_id)
 
         if 'error' in result:
             return jsonify({
