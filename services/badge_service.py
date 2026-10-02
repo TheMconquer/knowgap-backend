@@ -364,29 +364,58 @@ def get_badge_threshold(badge_level: str) -> int:
     }
     return threshold_map.get(badge_level, 0)
 
+class CanvasVerificationUnavailable(Exception):
+    """Raised when Canvas couldn't be reached to make a definitive
+    enrollment determination. Must never be treated the same as a
+    confirmed "not authorized" -- an outage isn't a denial, and a caller
+    who really does teach the student shouldn't be told they don't.
+    """
+
+
 async def _instructor_teaches_student(canvas_token: str, student_id: str, hint_course_id: str = None) -> bool:
     """Check real Canvas enrollment for whether this instructor can see the
     student on a course roster. Checks hint_course_id first (one call) since
     callers usually already know which course they're looking at; falls back
     to sweeping the instructor's other courses if that doesn't find a match,
     so a stale/wrong hint degrades gracefully instead of just failing.
+
+    Raises CanvasVerificationUnavailable if no course check ever came back
+    with a definitive answer (some call to Canvas failed) and none found
+    the student either -- that's "we don't know", not "no".
     """
     from services.achieveup_canvas_service import get_course_students, get_instructor_courses
 
+    had_failure = False
+
     async def course_has_student(course_id: str) -> bool:
+        nonlocal had_failure
         students = await get_course_students(canvas_token, course_id)
-        return isinstance(students, list) and any(str(s.get('id')) == str(student_id) for s in students)
+        if not isinstance(students, list):
+            had_failure = True
+            return False
+        return any(str(s.get('id')) == str(student_id) for s in students)
 
     if hint_course_id and await course_has_student(hint_course_id):
         return True
 
+    # get_instructor_courses returns a plain list of courses on success, or
+    # an {'error': ...} dict on failure -- never a {'courses': [...]} shape.
     courses_result = await get_instructor_courses(canvas_token)
-    for course in courses_result.get('courses', []):
+    if isinstance(courses_result, list):
+        courses = courses_result
+    else:
+        had_failure = True
+        courses = []
+
+    for course in courses:
         course_id = str(course.get('id'))
-        if course_id == str(hint_course_id):
+        if hint_course_id and course_id == str(hint_course_id):
             continue  # already checked above
         if await course_has_student(course_id):
             return True
+
+    if had_failure:
+        raise CanvasVerificationUnavailable('Could not verify Canvas enrollment right now')
 
     return False
 
@@ -406,19 +435,27 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
         canvas_token = await get_user_canvas_token(caller['id'])
 
         is_self = str(caller.get('canvas_student_id')) == str(student_id)
-        is_authorized_instructor = (
-            not is_self
-            and caller.get('role') == 'instructor'
-            and canvas_token
-            and await _instructor_teaches_student(canvas_token, student_id, course_id)
-        )
-
-        if not is_self and not is_authorized_instructor:
-            return {
-                'error': 'Forbidden',
-                'message': "You do not have access to this student's badges",
-                'statusCode': 403
-            }
+        if not is_self:
+            if caller.get('role') != 'instructor' or not canvas_token:
+                return {
+                    'error': 'Forbidden',
+                    'message': "You do not have access to this student's badges",
+                    'statusCode': 403
+                }
+            try:
+                teaches_student = await _instructor_teaches_student(canvas_token, student_id, course_id)
+            except CanvasVerificationUnavailable:
+                return {
+                    'error': 'Canvas Unavailable',
+                    'message': 'Could not verify your Canvas enrollment right now. Please try again shortly.',
+                    'statusCode': 503
+                }
+            if not teaches_student:
+                return {
+                    'error': 'Forbidden',
+                    'message': "You do not have access to this student's badges",
+                    'statusCode': 403
+                }
 
         # Get all badges for the student. A badge document only exists because
         # it already crossed its tier threshold at creation time (see
@@ -442,12 +479,14 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
         missing_ids = [cid for cid in course_ids if cid not in course_map]
         if missing_ids and canvas_token:
             try:
+                # get_instructor_courses returns a plain list on success, or
+                # an {'error': ...} dict on failure.
                 courses_result = await get_instructor_courses(canvas_token)
-                if 'courses' in courses_result:
-                    for course in courses_result['courses']:
-                        cid_str = str(course.get('id'))
-                        if cid_str in missing_ids:
-                            course_map[cid_str] = course.get('name', 'Unknown Course')
+                courses = courses_result if isinstance(courses_result, list) else []
+                for course in courses:
+                    cid_str = str(course.get('id'))
+                    if cid_str in missing_ids:
+                        course_map[cid_str] = course.get('name', 'Unknown Course')
             except Exception as e:
                 logger.error(f"Error fetching courses: {str(e)}")
         
@@ -632,7 +671,21 @@ async def generate_badge_share_link(token: str, student_id: str = None, course_i
                 }
             from services.achieveup_auth_service import get_user_canvas_token
             canvas_token = await get_user_canvas_token(caller['id'])
-            if not canvas_token or not await _instructor_teaches_student(canvas_token, target_student_id, course_id):
+            if not canvas_token:
+                return {
+                    'error': 'Forbidden',
+                    'message': "You do not have access to this student's badges",
+                    'statusCode': 403
+                }
+            try:
+                teaches_student = await _instructor_teaches_student(canvas_token, target_student_id, course_id)
+            except CanvasVerificationUnavailable:
+                return {
+                    'error': 'Canvas Unavailable',
+                    'message': 'Could not verify your Canvas enrollment right now. Please try again shortly.',
+                    'statusCode': 503
+                }
+            if not teaches_student:
                 return {
                     'error': 'Forbidden',
                     'message': "You do not have access to this student's badges",
