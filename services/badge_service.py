@@ -565,11 +565,12 @@ async def get_public_badges_by_share(share_id: str) -> dict:
         users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
 
         # Resolve the student from the share token — never from client input.
-        # An unknown or revoked share_id (badge_share_enabled False, or the
-        # field unset entirely after unshare) simply won't match here.
+        # An unknown share_id, or one cleared by opting out, simply won't
+        # match here. badge_sharing_opted_out is checked explicitly too as a
+        # second guard, in case a share_id is ever left behind opted-out.
         share_owner = await users_collection.find_one({
             'badge_share_id': share_id,
-            'badge_share_enabled': True
+            'badge_sharing_opted_out': {'$ne': True}
         })
         if not share_owner:
             return {
@@ -578,7 +579,10 @@ async def get_public_badges_by_share(share_id: str) -> dict:
                 'statusCode': 404
             }
 
-        student_id = share_owner['user_id']
+        # share_owner['user_id'] is this app's own internal account id, not
+        # the Canvas id badge documents are keyed by — using it here would
+        # silently match zero badges for every real student.
+        student_id = share_owner['canvas_student_id']
 
         # Get all badges for the student. A badge document only exists because
         # it already crossed its tier threshold at creation time (see
@@ -601,27 +605,61 @@ async def get_public_badges_by_share(share_id: str) -> dict:
         logger.error(f"Get public badges by share error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def share_student_badge_profile(token: str) -> dict:
-    """Enable public sharing of the caller's own badge profile and return the share link."""
+async def generate_badge_share_link(token: str, student_id: str = None, course_id: str = None) -> dict:
+    """Get (or lazily create) a student's public badge share link.
+
+    With no student_id, this is self-service: a student gets their own link.
+    With a student_id for someone else, the caller must be an instructor who
+    actually teaches that student (verified against real Canvas enrollment —
+    course_id is just a cheap first guess at which course to check, falling
+    back to a full sweep). Either way, sharing must not be opted out.
+    """
     try:
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return user_result
 
-        user_id = user_result['user']['id']
+        caller = user_result['user']
+        target_student_id = student_id or caller.get('canvas_student_id')
+        is_self = str(target_student_id) == str(caller.get('canvas_student_id'))
+
+        if not is_self:
+            if caller.get('role') != 'instructor':
+                return {
+                    'error': 'Forbidden',
+                    'message': "You do not have access to this student's badges",
+                    'statusCode': 403
+                }
+            from services.achieveup_auth_service import get_user_canvas_token
+            canvas_token = await get_user_canvas_token(caller['id'])
+            if not canvas_token or not await _instructor_teaches_student(canvas_token, target_student_id, course_id):
+                return {
+                    'error': 'Forbidden',
+                    'message': "You do not have access to this student's badges",
+                    'statusCode': 403
+                }
 
         users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
-        user_doc = await users_collection.find_one({'user_id': user_id})
+        target_doc = await users_collection.find_one({'canvas_student_id': target_student_id})
+        if not target_doc:
+            return {'error': 'Not found', 'message': 'Student not found', 'statusCode': 404}
+
+        if target_doc.get('badge_sharing_opted_out'):
+            return {
+                'error': 'Forbidden',
+                'message': 'This student has opted out of badge sharing',
+                'statusCode': 403
+            }
+
         # Reuse an existing share_id so re-sharing doesn't invalidate a link
-        # the student already handed out.
-        share_id = (user_doc or {}).get('badge_share_id') or str(uuid.uuid4())
+        # that's already been handed out.
+        share_id = target_doc.get('badge_share_id') or str(uuid.uuid4())
         share_link = f"https://achieveup.ucf.edu/badges/share/{share_id}"
 
         await users_collection.update_one(
-            {'user_id': user_id},
+            {'canvas_student_id': target_student_id},
             {'$set': {
                 'badge_share_id': share_id,
-                'badge_share_enabled': True,
                 'badge_shared_at': datetime.now(timezone.utc).replace(tzinfo=None)
             }}
         )
@@ -633,44 +671,45 @@ async def share_student_badge_profile(token: str) -> dict:
         }
 
     except Exception as e:
-        logger.error(f"Share student badge profile error: {str(e)}")
+        logger.error(f"Generate badge share link error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def unshare_student_badge_profile(token: str) -> dict:
-    """Disable public sharing of the caller's own badge profile."""
+async def set_badge_sharing_opt_out(token: str, opted_out: bool) -> dict:
+    """Set the caller's own badge-sharing preference (Settings page only —
+    this is self-service, never on behalf of another student).
+
+    Opting out always kills any existing share_id outright, rather than just
+    flagging it, so a link already handed out can't silently come back to
+    life if the student opts back in later — re-sharing mints a fresh one.
+    """
     try:
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return user_result
 
         user_id = user_result['user']['id']
-
         users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
-        # Drop badge_share_id entirely (rather than just disabling it) so a
-        # revoked link can never come back to life if the student shares
-        # again later — share_student_badge_profile will mint a fresh one.
-        await users_collection.update_one(
-            {'user_id': user_id},
-            {
-                '$set': {
-                    'badge_share_enabled': False,
-                    'badge_unshared_at': datetime.now(timezone.utc).replace(tzinfo=None)
-                },
-                '$unset': {'badge_share_id': ''}
-            }
-        )
 
-        return {'message': 'Badge profile is no longer public'}
+        update = {'$set': {'badge_sharing_opted_out': opted_out}}
+        if opted_out:
+            update['$unset'] = {'badge_share_id': ''}
+        await users_collection.update_one({'user_id': user_id}, update)
+
+        return {
+            'message': 'Badge sharing turned off' if opted_out else 'Badge sharing turned on',
+            'opted_out': opted_out
+        }
 
     except Exception as e:
-        logger.error(f"Unshare student badge profile error: {str(e)}")
+        logger.error(f"Set badge sharing opt-out error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
 async def get_badge_share_status(token: str) -> dict:
-    """Check whether the caller's badge profile is currently publicly shared.
+    """Check the caller's own current badge-sharing link and opt-out preference.
 
-    Read-only by design: unlike share_student_badge_profile, this must never
-    enable or change sharing as a side effect of just checking status.
+    Read-only by design: unlike generate_badge_share_link, this must never
+    create a link or change the opt-out preference as a side effect of just
+    checking status.
     """
     try:
         user_result = await achieveup_verify_token(token)
@@ -683,11 +722,12 @@ async def get_badge_share_status(token: str) -> dict:
         user_doc = await users_collection.find_one({'user_id': user_id}) or {}
 
         share_id = user_doc.get('badge_share_id')
-        shared = bool(share_id) and bool(user_doc.get('badge_share_enabled'))
+        opted_out = bool(user_doc.get('badge_sharing_opted_out'))
 
         return {
-            'shared': shared,
-            'share_link': f"https://achieveup.ucf.edu/badges/share/{share_id}" if shared else None
+            'shared': bool(share_id) and not opted_out,
+            'share_link': f"https://achieveup.ucf.edu/badges/share/{share_id}" if share_id and not opted_out else None,
+            'opted_out': opted_out
         }
 
     except Exception as e:

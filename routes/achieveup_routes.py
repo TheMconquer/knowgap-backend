@@ -580,8 +580,9 @@ async def get_public_badges_by_share_route(share_id):
         }), 500
 
 @achieveup_bp.route('/achieveup/badges/share-profile', methods=['POST'])
-async def share_student_badge_profile_route():
-    """Enable public sharing of the caller's own badge profile. (AchieveUp only)"""
+async def generate_badge_share_link_route():
+    """Get or create a badge share link, for the caller's own profile or
+    (if the caller is an instructor who teaches them) another student's. (AchieveUp only)"""
     try:
         # Get token from Authorization header
         auth_header = request.headers.get('Authorization')
@@ -593,10 +594,13 @@ async def share_student_badge_profile_route():
             }), 401
 
         token = auth_header.split(' ')[1]
+        data = await request.get_json(silent=True) or {}
+        student_id = data.get('student_id')
+        course_id = data.get('course_id')
 
         # Call badge service
-        from services.badge_service import share_student_badge_profile
-        result = await share_student_badge_profile(token)
+        from services.badge_service import generate_badge_share_link
+        result = await generate_badge_share_link(token, student_id, course_id)
 
         if 'error' in result:
             return jsonify({
@@ -614,9 +618,9 @@ async def share_student_badge_profile_route():
             'statusCode': 500
         }), 500
 
-@achieveup_bp.route('/achieveup/badges/unshare-profile', methods=['POST'])
-async def unshare_student_badge_profile_route():
-    """Disable public sharing of the caller's own badge profile. (AchieveUp only)"""
+@achieveup_bp.route('/achieveup/badges/opt-out', methods=['POST'])
+async def opt_out_badge_sharing_route():
+    """Turn off badge sharing for the caller's own profile (Settings page). (AchieveUp only)"""
     try:
         # Get token from Authorization header
         auth_header = request.headers.get('Authorization')
@@ -630,8 +634,43 @@ async def unshare_student_badge_profile_route():
         token = auth_header.split(' ')[1]
 
         # Call badge service
-        from services.badge_service import unshare_student_badge_profile
-        result = await unshare_student_badge_profile(token)
+        from services.badge_service import set_badge_sharing_opt_out
+        result = await set_badge_sharing_opt_out(token, True)
+
+        if 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/badges/opt-in', methods=['POST'])
+async def opt_in_badge_sharing_route():
+    """Turn badge sharing back on for the caller's own profile (Settings page). (AchieveUp only)"""
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+
+        # Call badge service
+        from services.badge_service import set_badge_sharing_opt_out
+        result = await set_badge_sharing_opt_out(token, False)
 
         if 'error' in result:
             return jsonify({
@@ -651,7 +690,7 @@ async def unshare_student_badge_profile_route():
 
 @achieveup_bp.route('/achieveup/badges/share-status', methods=['GET'])
 async def get_badge_share_status_route():
-    """Check whether the caller's badge profile is currently publicly shared. (AchieveUp only)"""
+    """Check the caller's own current badge-sharing link and opt-out preference. (AchieveUp only)"""
     try:
         # Get token from Authorization header
         auth_header = request.headers.get('Authorization')
