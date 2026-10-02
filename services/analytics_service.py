@@ -688,7 +688,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         students = students_result if isinstance(students_result, list) else []
         
         # Get all mapped skills for course from AchieveUp_Question_Skills
-        question_skills_cursor = db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].find({'course_id': course_id})
+        question_skills_cursor = db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].find({'course_ids': course_id})
         course_skills_set = set()
         async for qs in question_skills_cursor:
             for skill in qs.get('skills', []):
@@ -709,7 +709,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         use_demo_data = False
         if Config.ENABLE_DEMO_MODE:
             course_mastery_count = await mastery_collection.count_documents({'course_id': course_id})
-            course_assignment_count = await db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].count_documents({'course_id': course_id})
+            course_assignment_count = await db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].count_documents({'course_ids': course_id})
             if course_mastery_count == 0 and course_assignment_count == 0:
                 use_demo_data = True
         
@@ -903,7 +903,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         try:
             # Count assignments directly for this course in the new collection
             real_assignment_count = await db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].count_documents({
-                'course_id': course_id
+                'course_ids': course_id
             })
             
             # Fallback to check old collection if no assignments found

@@ -23,6 +23,7 @@ import csv
 import io
 
 from mongodb import get_db
+from utils import text_utils
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -336,12 +337,16 @@ async def process_submission_data(submission: dict) -> dict:
         
         # Process individual questions
         for question in submission.get('questions', []):
+            raw_text = text_utils.normalize_text(question.get('question_text', ''))
+            answers = question.get('answers', [])
+            answer_texts = sorted([
+                text_utils.normalize_text(a.get('text', '').strip())
+                for a in answers if a.get('text', '').strip()
+            ])
+            answer_part = ' ' + ' '.join(answer_texts) if answer_texts else ''
+            question_key = raw_text + answer_part if raw_text else f"question_{question.get('id')}"
             question_data = {
-                # question_id is the extracted question TEXT, not Canvas's
-                # numeric id — AchieveUp_Question_Skills keys skill
-                # assignments by question text (see SkillAssignmentInterface),
-                # so mastery lookups need the same key.
-                'question_id': extract_text_from_html(question.get('question_text')),
+                'question_id': text_utils.build_question_hash(question_key),
                 'canvas_question_id': str(question.get('id')),
                 'question_type': question.get('question_type'),
                 'points': question.get('points', 0),
