@@ -693,17 +693,7 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                 question_text = question.get('question_text', '')
 
                                 # Extract Canvas file IDs from any embedded images
-                                soup = BeautifulSoup(question_text, 'html.parser')
-                                attachment_ids = []
-                                attachment_urls = []
-                                for img in soup.find_all('img'):
-                                    endpoint = img.get('data-api-endpoint', '')
-                                    src = img.get('src', '')
-                                    if '/files/' in endpoint:
-                                        file_id = endpoint.split('/files/')[-1].split('/')[0]
-                                        attachment_ids.append(file_id)
-                                        if src:
-                                            attachment_urls.append(src)
+                                attachment_ids, attachment_urls = text_utils.extract_attachments(question_text)
 
                                 
                                 answers = question.get('answers', [])

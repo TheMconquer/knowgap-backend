@@ -21,10 +21,28 @@ def build_question_hash(raw_key: str) -> str:
     normalized = normalize_text(raw_key)
     return hash_text(normalized)
 
+def extract_attachments(html: str) -> tuple[list[str], list[str]]:
+    """Canvas file IDs and image URLs embedded in question HTML."""
+    ids, urls = [], []
+    if not html:
+        return ids, urls
+    for img in BeautifulSoup(html, "html.parser").find_all("img"):
+        endpoint = img.get("data-api-endpoint", "")
+        src = img.get("src", "")
+        if "/files/" in endpoint:
+            ids.append(endpoint.split("/files/")[-1].split("/")[0])
+            if src:
+                urls.append(src)
+    return ids, urls
+
 def build_question_key(question_text: str, answer_texts: list[str] | None = None) -> str:
-    """Builds the identity key for a question: normalized text plus sorted normalized answers."""
+    """Builds the identity key for a question: normalized text, any embedded image file IDs,
+    and sorted normalized answers."""
     text = normalize_text(question_text)
+    ids, _ = extract_attachments(question_text)
+    if ids:
+        text = (text + " attachment_" + "_".join(ids)).strip()
     answers = sorted(
         normalize_text(a) for a in (answer_texts or []) if a and a.strip()
     )
-    return text + (' ' + ' '.join(answers) if answers else '')
+    return (text + ' ' + ' '.join(answers)).strip()
