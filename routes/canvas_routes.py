@@ -278,3 +278,26 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500 
+    
+# Test route
+@canvas_bp.route('/canvas/test/courses/<course_id>/quizzes/<quiz_id>/raw', methods=['GET'])
+async def test_quiz_raw_route(course_id, quiz_id):
+    from config import Config
+    from services.achieveup_canvas_service import get_instructor_quiz_questions, is_new_quiz
+    from services.canvas_submissions_service import get_new_quiz_data
+
+    if Config.ENV != 'development':
+        return jsonify({'error': 'Test route disabled outside development'}), 404
+
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Missing Bearer token'}), 401
+    canvas_token = auth_header.split(' ', 1)[1].strip()  # Canvas API token
+
+    quiz_is_new = await is_new_quiz(canvas_token, course_id, quiz_id)
+
+    return jsonify({
+        'is_new_quiz': quiz_is_new,
+        'get_instructor_quiz_questions': await get_instructor_quiz_questions(canvas_token, quiz_id, course_id),
+        'get_new_quiz_data': await get_new_quiz_data(canvas_token, course_id, quiz_id) if quiz_is_new else None,
+    }), 200

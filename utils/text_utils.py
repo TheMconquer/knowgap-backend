@@ -20,3 +20,11 @@ def hash_text(string: str) -> str:
 def build_question_hash(raw_key: str) -> str:
     normalized = normalize_text(raw_key)
     return hash_text(normalized)
+
+def build_question_key(question_text: str, answer_texts: list[str] | None = None) -> str:
+    """Builds the identity key for a question: normalized text plus sorted normalized answers."""
+    text = normalize_text(question_text)
+    answers = sorted(
+        normalize_text(a) for a in (answer_texts or []) if a and a.strip()
+    )
+    return text + (' ' + ' '.join(answers) if answers else '')
