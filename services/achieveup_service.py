@@ -348,7 +348,7 @@ async def assign_skills_to_questions(token: str, course_id: str, question_skills
         user_id = user_result['user']['id']
 
         for question_text, skills in question_skills.items():
-            question_hash = text_utils.hash_text(question_text)
+            question_hash = text_utils.build_question_hash(question_text)
 
             assignment_doc = {
                 'question_id': question_hash,
@@ -388,7 +388,7 @@ async def get_assigned_skills(token: str, course_id: str, question_ids:list[str]
         # Build hash to original text map for translating results back
         hash_to_text = {}
         for text in question_ids:
-            h = text_utils.hash_text(text)
+            h = text_utils.build_question_hash(text)
             hash_to_text[h] = text
 
         hashes = list(hash_to_text.keys())

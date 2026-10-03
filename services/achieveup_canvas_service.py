@@ -705,21 +705,15 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                         if src:
                                             attachment_urls.append(src)
 
-                                
                                 answers = question.get('answers', [])
-                                raw_answer_texts = [a.get('text') or '' for a in answers]
-                                answer_texts = [text_utils.normalize_text(t) for t in raw_answer_texts if t.strip()]
-                                question_key = text_utils.build_question_key(question_text, raw_answer_texts) \
-                                    or f"question_{question.get('id')}"
-                                
+                                answer_texts = [text_utils.normalize_text(a.get('text', '')) for a in answers if a.get('text', '').strip()]
                                 questions.append({
                                     'id': str(question.get('id')),
                                     'question_text': question_text,
                                     'quiz_id': str(quiz_id),
                                     'attachment_ids': attachment_ids,
                                     'attachment_urls': attachment_urls,
-                                    'answer_texts': answer_texts,
-                                    'question_key': question_key
+                                    'answer_texts': answer_texts
                                 })
                             return questions
                         else:
@@ -739,19 +733,15 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                 return {'error': f'Failed to fetch instructor quiz questions.', 'statusCode': res.status}
 
                             # Return all question fields that are not stimulus.
-                            questions = []
-                            for question in questions_data:
-                                if question.get("entry_type") == "Stimulus":
-                                    continue
-                                item_body = (question.get("entry") or {}).get("item_body")
-                                questions.append({
+                            return (
+                            [
+                                {
                                     "id": str(question.get("id")),
-                                    "question_text": item_body,
-                                    "quiz_id": str(quiz_id),
-                                    "question_key": text_utils.build_question_key(item_body)
-                                                    or f"question_{question.get('id')}"
-                                })
-                            return questions
+                                    "question_text": (question.get("entry") or {}).get("item_body"),
+                                    "quiz_id": str(quiz_id)
+                                } for question in questions_data
+                                if question.get("entry_type") != "Stimulus"
+                            ])
                         else:
                             logger.error(f"Canvas instructor quiz questions error: {res.status} - {await res.text()}")
                             return {'error': f'Failed to fetch instructor quiz questions: {res.status}', 'statusCode': res.status}
