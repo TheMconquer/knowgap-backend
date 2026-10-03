@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 db = get_db()
 
 achieveup_user_badges_collection = db[Config.ACHIEVEUP_USER_BADGES_COLLECTION]
+achieveup_badge_sharing_collection = db[Config.ACHIEVEUP_BADGE_SHARING_COLLECTION]
 achieveup_badge_progress_collection = db[Config.ACHIEVEUP_BADGE_PROGRESS_COLLECTION]
 achieveup_student_skill_mastery_collection = db[Config.ACHIEVEUP_STUDENT_SKILL_MASTERY_COLLECTION]
 achieveup_skill_matrices_collection = db[Config.ACHIEVEUP_SKILL_MATRICES_COLLECTION]
@@ -601,13 +602,13 @@ def _public_badge_view(badge: dict) -> dict:
 async def get_public_badges_by_share(share_id: str) -> dict:
     """Get all earned badges for whichever student owns this share link."""
     try:
-        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
-
         # Resolve the student from the share token — never from client input.
         # An unknown share_id, or one cleared by opting out, simply won't
         # match here. badge_sharing_opted_out is checked explicitly too as a
         # second guard, in case a share_id is ever left behind opted-out.
-        share_owner = await users_collection.find_one({
+        # This collection is keyed purely by canvas_student_id, independent
+        # of whether the student ever created an AchieveUp account.
+        share_owner = await achieveup_badge_sharing_collection.find_one({
             'badge_share_id': share_id,
             'badge_sharing_opted_out': {'$ne': True}
         })
@@ -618,9 +619,6 @@ async def get_public_badges_by_share(share_id: str) -> dict:
                 'statusCode': 404
             }
 
-        # share_owner['user_id'] is this app's own internal account id, not
-        # the Canvas id badge documents are keyed by — using it here would
-        # silently match zero badges for every real student.
         student_id = share_owner['canvas_student_id']
 
         # Get all badges for the student. A badge document only exists because
@@ -659,8 +657,12 @@ async def generate_badge_share_link(token: str, student_id: str = None, course_i
             return user_result
 
         caller = user_result['user']
-        target_student_id = student_id or caller.get('canvas_student_id')
-        is_self = str(target_student_id) == str(caller.get('canvas_student_id'))
+        # Canvas ids aren't consistently typed across this codebase (a
+        # student's own signup stores the raw Canvas int; instructor-facing
+        # roster data is pre-stringified) -- normalize here so the same real
+        # student always keys into the same sharing doc either way.
+        target_student_id = str(student_id) if student_id else str(caller.get('canvas_student_id'))
+        is_self = target_student_id == str(caller.get('canvas_student_id'))
 
         if not is_self:
             if caller.get('role') != 'instructor':
@@ -692,12 +694,9 @@ async def generate_badge_share_link(token: str, student_id: str = None, course_i
                     'statusCode': 403
                 }
 
-        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
-        target_doc = await users_collection.find_one({'canvas_student_id': target_student_id})
-        if not target_doc:
-            return {'error': 'Not found', 'message': 'Student not found', 'statusCode': 404}
+        sharing_doc = await achieveup_badge_sharing_collection.find_one({'canvas_student_id': target_student_id}) or {}
 
-        if target_doc.get('badge_sharing_opted_out'):
+        if sharing_doc.get('badge_sharing_opted_out'):
             return {
                 'error': 'Forbidden',
                 'message': 'This student has opted out of badge sharing',
@@ -706,15 +705,16 @@ async def generate_badge_share_link(token: str, student_id: str = None, course_i
 
         # Reuse an existing share_id so re-sharing doesn't invalidate a link
         # that's already been handed out.
-        share_id = target_doc.get('badge_share_id') or str(uuid.uuid4())
+        share_id = sharing_doc.get('badge_share_id') or str(uuid.uuid4())
         share_link = f"https://achieveup.ucf.edu/badges/share/{share_id}"
 
-        await users_collection.update_one(
+        await achieveup_badge_sharing_collection.update_one(
             {'canvas_student_id': target_student_id},
             {'$set': {
                 'badge_share_id': share_id,
                 'badge_shared_at': datetime.now(timezone.utc).replace(tzinfo=None)
-            }}
+            }},
+            upsert=True
         )
 
         return {
@@ -740,13 +740,16 @@ async def set_badge_sharing_opt_out(token: str, opted_out: bool) -> dict:
         if 'error' in user_result:
             return user_result
 
-        user_id = user_result['user']['id']
-        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
+        # Normalized the same way as generate_badge_share_link, so self-service
+        # always keys into the same doc an instructor's share would use.
+        canvas_student_id = str(user_result['user'].get('canvas_student_id'))
 
         update = {'$set': {'badge_sharing_opted_out': opted_out}}
         if opted_out:
             update['$unset'] = {'badge_share_id': ''}
-        await users_collection.update_one({'user_id': user_id}, update)
+        await achieveup_badge_sharing_collection.update_one(
+            {'canvas_student_id': canvas_student_id}, update, upsert=True
+        )
 
         return {
             'message': 'Badge sharing turned off' if opted_out else 'Badge sharing turned on',
@@ -769,13 +772,14 @@ async def get_badge_share_status(token: str) -> dict:
         if 'error' in user_result:
             return user_result
 
-        user_id = user_result['user']['id']
+        # Normalized the same way as generate_badge_share_link, so self-service
+        # always keys into the same doc an instructor's share would use.
+        canvas_student_id = str(user_result['user'].get('canvas_student_id'))
 
-        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
-        user_doc = await users_collection.find_one({'user_id': user_id}) or {}
+        sharing_doc = await achieveup_badge_sharing_collection.find_one({'canvas_student_id': canvas_student_id}) or {}
 
-        share_id = user_doc.get('badge_share_id')
-        opted_out = bool(user_doc.get('badge_sharing_opted_out'))
+        share_id = sharing_doc.get('badge_share_id')
+        opted_out = bool(sharing_doc.get('badge_sharing_opted_out'))
 
         return {
             'shared': bool(share_id) and not opted_out,

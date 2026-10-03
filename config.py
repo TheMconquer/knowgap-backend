@@ -42,6 +42,7 @@ class Config:
     ACHIEVEUP_STUDENT_SKILL_MASTERY_COLLECTION = "AchieveUp_Student_Skill_Mastery"
     ACHIEVEUP_BADGES_COLLECTION = "AchieveUp_Badges"
     ACHIEVEUP_USER_BADGES_COLLECTION = "AchieveUp_User_Badges"
+    ACHIEVEUP_BADGE_SHARING_COLLECTION = "AchieveUp_Badge_Sharing"
     ACHIEVEUP_BADGE_PROGRESS_COLLECTION = "AchieveUp_Badge_Progress"
     ACHIEVEUP_USER_PROGRESS_COLLECTION = "AchieveUp_User_Progress"
     ACHIEVEUP_PROGRESS_ANALYTICS_COLLECTION = "AchieveUp_Progress_Analytics"

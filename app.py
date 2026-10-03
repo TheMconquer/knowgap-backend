@@ -121,6 +121,12 @@ async def create_indexes():
             unique=True,
             name="course_instructor_unique_idx"
         )
+        badge_sharing_collection = db[Config.ACHIEVEUP_BADGE_SHARING_COLLECTION]
+        await badge_sharing_collection.create_index(
+            "canvas_student_id",
+            unique=True,
+            name="badge_sharing_canvas_student_id_unique_idx"
+        )
         logger.info("Successfully created MongoDB indexes")
     except Exception as e:
         logger.error(f"Failed to create MongoDB indexes: {str(e)}")
