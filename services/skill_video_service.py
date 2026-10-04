@@ -11,9 +11,10 @@ from services.achieveup_service import (
     achieveup_question_skills_collection,
     achieveup_skill_matrices_collection,
     achieveup_course_descriptions_collection,
+    get_course_channels
 )
 from utils.ai_utils import generate_skill_search_topics
-from utils.youtube_utils import fetch_videos_for_topic, get_video_metadata, fetch_video_transcript
+from utils.youtube_utils import fetch_videos_for_topic, get_video_metadata, fetch_video_transcript, fetch_videos_for_topic_and_channel
 
 logger = logging.getLogger(__name__)
 
@@ -309,16 +310,52 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
             existing_links.add(existing['link'])
 
         candidates = []
-        for topic in topics_result['topics']:
-            videos = await fetch_videos_for_topic(topic, limit=count)
-            for video in videos:
-                if video.get('link') and video['link'] not in existing_links:
-                    existing_links.add(video['link'])
-                    candidates.append(video)
+
+        # A. Get instructor-configured preferred channels for this course
+        configured_channels = await get_course_channels(token, course_id)
+
+        # B. Priority Pass: Search using configured channel handles first
+        if configured_channels:
+            logger.info(f"Prioritizing search across configured channels: {configured_channels}")
+            # Calculate how many videos to request per channel
+            per_channel_limit = max(2, (count - len(candidates)) // len(configured_channels))  # Ensure at least 2 per channel
+
+            for topic in topics_result['topics']:
                 if len(candidates) >= count:
                     break
-            if len(candidates) >= count:
-                break
+                for channel in configured_channels:
+                    if len(candidates) >= count:
+                        break
+
+                    # Pass the clean 'topic' and 'channel' separately to the YouTube API wrapper
+                    channel_videos = await fetch_videos_for_topic_and_channel(
+                        topic=topic, 
+                        channel_handle=channel, 
+                        limit=per_channel_limit)
+                    
+                    for video in channel_videos:
+                        if video.get('link') and video['link'] not in existing_links:
+                            existing_links.add(video['link'])
+                            candidates.append(video)
+                        if len(candidates) >= count:
+                            break
+
+       # C. Fallback Pass: Standard global search if more candidate videos are still needed
+        if len(candidates) < count:
+            logger.info(f"Fallback to standard YouTube search. Current candidate count: {len(candidates)}/{count}")
+            for topic in topics_result['topics']:
+                if len(candidates) >= count:
+                    break
+                
+                needed = count - len(candidates)
+                global_videos = await fetch_videos_for_topic(topic=topic, limit=needed)
+                
+                for video in global_videos:
+                    if video.get('link') and video['link'] not in existing_links:
+                        existing_links.add(video['link'])
+                        candidates.append(video)
+                    if len(candidates) >= count:
+                        break
 
         # 5. Insert as published — visible to students immediately, tagged ai_suggested
         now = _now()
@@ -465,10 +502,8 @@ def _find_best_transcript_bucket(transcript: list, skill_name: str):
 
 
 async def find_relevant_moment(token: str, video_id: str) -> dict:
-    """Instructor opt-in: find the transcript moment most relevant to a manually-added
-    video's skill, and store it as a deep-link timestamp. Not available for AI-suggested
-    videos — those are already short and topic-specific, so a moment search adds cost
-    without much benefit."""
+    """Instructor opt-in: find the transcript moment most relevant to a 
+    video's skill, and store it as a deep-link timestamp."""
     try:
         _, error = await _require_instructor(token)
         if error:
@@ -478,12 +513,6 @@ async def find_relevant_moment(token: str, video_id: str) -> dict:
         if not video:
             return {'error': 'Video not found', 'statusCode': 404}
 
-        if video.get('source') != 'manual':
-            return {
-                'error': 'Not supported for AI-suggested videos',
-                'message': 'Finding a relevant moment is only available for videos you added yourself.',
-                'statusCode': 400
-            }
 
         transcript_result = await fetch_video_transcript(video['link'])
         if not transcript_result.get('success'):
