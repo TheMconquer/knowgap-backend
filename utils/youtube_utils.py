@@ -42,16 +42,21 @@ async def resolve_channel_id(youtube, channel_identifier: str) -> str | None:
     # Ensure handle format (e.g., '@AmoebaSisters')
     handle = clean_id if clean_id.startswith('@') else f"@{clean_id}"    
     try:
-        response = youtube.channels().list(
-            part='id',
-            forHandle=handle
-        ).execute()
+
+        # Run the synchronous function in a thread pool to make it async-friendly
+
+        def fetch_channel_id():
+            return youtube.channels().list(
+                part='id',
+                forHandle=handle
+            ).execute()      
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, fetch_channel_id)
         
         items = response.get('items', [])
         if items:
             return items[0]['id']
             
-        logging.warning(f"RESULT: {items}")
         return None
 
     except HttpError as e:
@@ -77,15 +82,21 @@ async def fetch_videos_for_topic_and_channel(topic: str, channel_handle: str, li
             return []
 
         # Step 2: Execute official YouTube search filtered by channelId
-        search_response = youtube.search().list(
-            q=topic,
-            channelId=channel_id,  # Strictly restricts search to this channel
-            type='video',          # Only retrieve videos
-            part='id,snippet',
-            maxResults=limit
-        ).execute()
+        
+        # Run the synchronous function in a thread pool to make it async-friendly
+        def fetch_videos():
+            search_response = youtube.search().list(
+                q=topic,
+                channelId=channel_id,  # Strictly restricts search to this channel
+                type='video',          # Only retrieve videos
+                part='id,snippet',
+                maxResults=limit
+            ).execute()
+            results = search_response.get('items', [])
+            return results
 
-        results = search_response.get('items', [])
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(None, fetch_videos)
 
         if not results:
             logging.warning(f"No results found for topic '{topic}' in channel '{channel_id}'")

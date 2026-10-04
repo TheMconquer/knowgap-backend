@@ -2029,7 +2029,7 @@ async def get_course_channels(token: str, course_id: str) -> list:
         return []
     except Exception as e:
         logger.error(f"Error fetching channels for course {course_id}: {str(e)}")
-        return []
+        return {'error': 'Internal server error', 'statusCode': 500}
 
 async def update_course_channels(token: str, course_id: str, channels: list) -> bool:
     """
@@ -2065,4 +2065,4 @@ async def update_course_channels(token: str, course_id: str, channels: list) -> 
 
     except Exception as e:
         logger.error(f"MongoDB Error in update_course_channels for course {course_id}: {str(e)}", exc_info=True)
-        return False
+        return {'error': 'Internal server error', 'statusCode': 500}
