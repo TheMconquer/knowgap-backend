@@ -63,6 +63,10 @@ class Config:
     # AchieveUp configuration
     ACHIEVEUP_JWT_SECRET = os.getenv("ACHIEVEUP_JWT_SECRET", "achieveup-secret-key-change-in-production")
     CANVAS_API_URL = os.getenv("CANVAS_API_URL", "https://canvas.instructure.com/api/v1")
+
+    # Public address of the AchieveUp frontend, used to build links people copy and share
+    # (e.g. badge share links). Set to http://localhost:3000 in .env for local development.
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "https://achieveupapp.com").rstrip("/")
     
     # Canvas API Configuration
     CANVAS_API_RATE_LIMIT = int(os.getenv("CANVAS_API_RATE_LIMIT", "100"))  # requests per minute

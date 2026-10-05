@@ -642,6 +642,10 @@ async def get_public_badges_by_share(share_id: str) -> dict:
         logger.error(f"Get public badges by share error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
+def _build_share_link(share_id: str) -> str:
+    """Full public URL of the frontend page that shows a shared badge profile."""
+    return f"{Config.FRONTEND_URL}/badges/share/{share_id}"
+
 async def generate_badge_share_link(token: str, student_id: str = None, course_id: str = None) -> dict:
     """Get (or lazily create) a student's public badge share link.
 
@@ -706,7 +710,7 @@ async def generate_badge_share_link(token: str, student_id: str = None, course_i
         # Reuse an existing share_id so re-sharing doesn't invalidate a link
         # that's already been handed out.
         share_id = sharing_doc.get('badge_share_id') or str(uuid.uuid4())
-        share_link = f"https://achieveup.ucf.edu/badges/share/{share_id}"
+        share_link = _build_share_link(share_id)
 
         await achieveup_badge_sharing_collection.update_one(
             {'canvas_student_id': target_student_id},
@@ -783,7 +787,7 @@ async def get_badge_share_status(token: str) -> dict:
 
         return {
             'shared': bool(share_id) and not opted_out,
-            'share_link': f"https://achieveup.ucf.edu/badges/share/{share_id}" if share_id and not opted_out else None,
+            'share_link': _build_share_link(share_id) if share_id and not opted_out else None,
             'opted_out': opted_out
         }
 
