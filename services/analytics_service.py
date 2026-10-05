@@ -5,6 +5,7 @@ import json
 import statistics
 from datetime import datetime, timedelta, timezone
 from services.achieveup_auth_service import achieveup_verify_token
+from services.skill_tiers import tier_for_score, is_mastered
 from config import Config
 import random
 
@@ -687,7 +688,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         students = students_result if isinstance(students_result, list) else []
         
         # Get all mapped skills for course from AchieveUp_Question_Skills
-        question_skills_cursor = db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].find({'course_id': course_id})
+        question_skills_cursor = db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].find({'course_ids': course_id})
         course_skills_set = set()
         async for qs in question_skills_cursor:
             for skill in qs.get('skills', []):
@@ -708,7 +709,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         use_demo_data = False
         if Config.ENABLE_DEMO_MODE:
             course_mastery_count = await mastery_collection.count_documents({'course_id': course_id})
-            course_assignment_count = await db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].count_documents({'course_id': course_id})
+            course_assignment_count = await db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].count_documents({'course_ids': course_id})
             if course_mastery_count == 0 and course_assignment_count == 0:
                 use_demo_data = True
         
@@ -764,19 +765,20 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                 skill_breakdown = {}
                 skill_scores = {}
                 skills_mastered = 0
-                
+                skills_with_badge = 0
+
                 for skill in course_skills:
                     score = base_performance * 100 + rng.uniform(-20, 30)
                     score = max(15, min(100, score))
-                    
-                    if score >= 80:
-                        level = "advanced"
+
+                    level = tier_for_score(score)
+                    if is_mastered(score):
                         skills_mastered += 1
-                    elif score >= 60:
-                        level = "intermediate"
-                    else:
-                        level = "beginner"
-                    
+                    # Real badges start at the beginner tier (25%+), not at
+                    # "mastered" (50%+) — see badge_service.tier_for_score.
+                    if level != 'none':
+                        skills_with_badge += 1
+
                     questions_attempted = rng.randint(2, 8)
                     questions_correct = max(0, int(questions_attempted * (score / 100) + rng.uniform(-1, 1)))
                     questions_correct = min(questions_attempted, questions_correct)
@@ -796,8 +798,8 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                     all_skill_scores[skill].append(score)
                 
                 overall_progress = round(sum(skill_scores.values()) / len(skill_scores), 1) if skill_scores else 0
-                # A single badge is earned only at advanced level (80% or higher)
-                badges_earned = skills_mastered
+              
+                badges_earned = skills_with_badge
                 
                 risk_level = 'low' if overall_progress >= 75 else 'medium' if overall_progress >= 50 else 'high'
                 
@@ -836,15 +838,11 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                     score = doc.get('mastery_percentage', 0)
                     questions_attempted = doc.get('total_attempted', 0)
                     questions_correct = doc.get('total_correct', 0)
-                    
-                    if score >= 80:
-                        level = "advanced"
+
+                    level = tier_for_score(score)
+                    if is_mastered(score):
                         skills_mastered += 1
-                    elif score >= 60:
-                        level = "intermediate"
-                    else:
-                        level = "beginner"
-                    
+
                     skill_breakdown[skill_name] = {
                         "score": round(score, 1),
                         "level": level,
@@ -861,7 +859,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                 else:
                     skill_breakdown[skill_name] = {
                         "score": 0,
-                        "level": "beginner",
+                        "level": tier_for_score(0),
                         "questionsAttempted": 0,
                         "questionsCorrect": 0
                     }
@@ -882,9 +880,10 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
             
             overall_progress = round(sum(skill_scores.values()) / len(skill_scores), 1) if skill_scores else 0
             risk_level = 'low' if overall_progress >= 75 else 'medium' if overall_progress >= 50 else 'high'
-            
-            # A single badge is earned only at advanced level (80% or higher)
-            badges_earned = skills_mastered
+
+            # Count this student's actual earned badges (one per skill, at
+            # its highest tier
+            badges_earned = sum(1 for key in highest_badges if key[0] == student_id)
             
             student_analytics.append({
                 'id': student_id,
@@ -904,7 +903,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
         try:
             # Count assignments directly for this course in the new collection
             real_assignment_count = await db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].count_documents({
-                'course_id': course_id
+                'course_ids': course_id
             })
             
             # Fallback to check old collection if no assignments found

@@ -12,16 +12,42 @@ import aiohttp
 import asyncio
 import logging
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
-from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL
+from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL, is_new_quiz
+from services.skill_tiers import tier_for_score
 from config import Config
+import csv
+import io
 
 from mongodb import get_db
+from utils import text_utils
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+
+class _TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.chunks = []
+
+    def handle_data(self, data):
+        self.chunks.append(data)
+
+
+def extract_text_from_html(html_string: Optional[str]) -> str:
+    """Strip HTML tags from a Canvas question_text, mirroring the frontend's
+    div.textContent extraction (SkillAssignmentInterface.tsx's
+    extractTextFromHTML) so submission questions match the question-text
+    keys stored in AchieveUp_Question_Skills at skill-assignment time."""
+    if not html_string:
+        return ''
+    parser = _TextExtractor()
+    parser.feed(html_string)
+    return ''.join(parser.chunks)
 
 # MongoDB setup
 db = get_db()
@@ -65,14 +91,14 @@ async def get_student_quiz_submission(canvas_token: str, course_id: str, quiz_id
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
-        
+
         # Get quiz submission
         url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
         params = {
             'user_id': student_id,
             'include[]': ['submission', 'quiz', 'user']
         }
-        
+
         async with create_canvas_session() as session:
             async with session.get(url, headers=headers, params=params) as response:
                 if response.status != 200:
@@ -82,9 +108,9 @@ async def get_student_quiz_submission(canvas_token: str, course_id: str, quiz_id
                         'error': f'Failed to fetch submission: {response.status}',
                         'statusCode': response.status
                     }
-                
+
                 data = await response.json()
-                
+
                 # Canvas returns submissions in 'quiz_submissions' array
                 submissions = data.get('quiz_submissions', [])
                 if not submissions:
@@ -93,14 +119,14 @@ async def get_student_quiz_submission(canvas_token: str, course_id: str, quiz_id
                         'message': 'Student has not submitted this quiz',
                         'statusCode': 404
                     }
-                
+
                 # Get the most recent submission
                 submission = submissions[0]
-                
+
                 # Fetch detailed submission data with questions
                 submission_id = submission.get('id')
                 questions_url = f"{CANVAS_API_URL}/quiz_submissions/{submission_id}/questions"
-                
+
                 async with session.get(questions_url, headers=headers) as q_response:
                     if q_response.status == 200:
                         questions_data = await q_response.json()
@@ -108,9 +134,9 @@ async def get_student_quiz_submission(canvas_token: str, course_id: str, quiz_id
                     else:
                         logger.warning(f"Could not fetch submission questions: {q_response.status}")
                         submission['questions'] = []
-                
+
                 return submission
-                
+
     except aiohttp.ClientError as e:
         logger.error(f"Canvas API connection error: {str(e)}")
         return {
@@ -141,52 +167,145 @@ async def get_all_course_submissions(canvas_token: str, course_id: str, quiz_id:
         }
         
         url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/submissions"
-        params = {
-            'per_page': 100,
-            'include[]': ['submission', 'user']
-        }
-        
-        all_submissions = []
+        new_quiz_url: str = f"{CANVAS_API_URL}/courses/{course_id}/assignments/{quiz_id}/submissions"
+
+        all_submissions: list = []
         
         async with create_canvas_session() as session:
-            # Handle pagination
-            while url:
-                async with session.get(url, headers=headers, params=params) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
-                        return {
-                            'error': f'Failed to fetch submissions: {response.status}',
-                            'statusCode': response.status
-                        }
-                    
-                    data = await response.json()
-                    submissions = data.get('quiz_submissions', [])
-                    all_submissions.extend(submissions)
-                    
-                    # Check rate limit headers before continuing
-                    await check_rate_limit(response)
-                    
-                    # Check for next page
-                    link_header = response.headers.get('Link', '')
-                    url = None
-                    if 'rel="next"' in link_header:
-                        # Parse next URL from Link header
-                        for link in link_header.split(','):
-                            if 'rel="next"' in link:
-                                url = link.split(';')[0].strip('<> ')
-                                break
-                    
-                    params = {}  # Clear params for subsequent requests (URL has them)
+            is_canvas_new_quiz: bool | None = None
+
+            match await is_new_quiz(canvas_token, course_id, quiz_id):
+                case True:
+                    is_canvas_new_quiz = True
+                    cont: bool = True
+                    params = {
+                        'per_page': 100
+                    }
+
+                    # While loop to ensure response pages are also parsed.
+                    while cont:
+                        async with session.get(new_quiz_url, headers=headers, params=params) as response:
+                            if response.status != 200:
+                                error_text = await response.text()
+                                logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
+                                return {
+                                    'error': f'Failed to fetch submissions: {response.status}',
+                                    'statusCode': response.status
+                                }
+                            
+                            data = await response.json()
+
+                            if "errors" in data:
+                                logger.error(f"Canvas' REST API call returned an error: {data['errors']}")
+                                return {
+                                    "error": "Canvas API call error.",
+                                    "message": "An error occured when attempting to communicate with Canvas' API.",
+                                    "statusCode": 400
+                                }
+
+                            # Mapping new quiz fields to the same fields classic quizzes returns.
+                            all_submissions.extend([
+                                {
+                                    'attempt': submission.get('attempt'),
+                                    'attempts_left': None,
+                                    'end_at': submission.get('cached_due_date'),
+                                    'excused?': submission.get('excused'),
+                                    'extra_attempts': submission.get('extra_attempts'),
+                                    'extra_time': None,
+                                    'finished_at': submission.get('submitted_at'),
+                                    'fudge_points': None,
+                                    'has_seen_results': None,
+                                    'html_url': submission.get('preview_url') or submission.get('url'),
+                                    'id': submission.get('id'),
+                                    'kept_score': submission.get('score') if submission.get('score') is not None else submission.get('entered_score'),
+                                    'manually_unlocked': None,
+                                    'overdue_and_needs_submission': submission.get('missing'),
+                                    'quiz_id': submission.get('assignment_id', quiz_id),
+                                    'quiz_points_possible': None,
+                                    'quiz_version': None,
+                                    'result_url': submission.get('preview_url'),
+                                    'score': submission.get('score'),
+                                    'score_before_regrade': None,
+                                    'started_at': None,
+                                    'submission_id': submission.get('id'),
+                                    'time_spent': None,
+                                    'user_id': submission.get('user_id'),
+                                    'validation_token': None,
+                                    'workflow_state': submission.get('workflow_state'),
+                                }
+                                for submission in data
+                                if submission.get("attempt")
+                            ])
+
+                            await check_rate_limit(response)
+                                
+                            # Check for next page
+                            link_header = response.headers.get('Link', '')
+                            if 'rel="next"' in link_header:
+                                # Parse next URL from Link header
+                                for link in link_header.split(','):
+                                    if 'rel="next"' in link:
+                                        new_quiz_url = link.split(';')[0].strip('<> ')
+                                        break
+                            else:
+                                cont = False
+                            
+                            params = {}
+
+                case False:
+                    is_canvas_new_quiz = False
+                    params = {
+                        'per_page': 100,
+                        'include[]': ['submission', 'user']
+                    }
+
+                    cont: bool = True
+                    while cont:
+                        async with session.get(url, headers=headers, params=params) as response:
+                            if response.status != 200:
+                                error_text = await response.text()
+                                logger.error(f"Canvas submissions fetch error: {response.status} - {error_text}")
+                                return {
+                                    'error': f'Failed to fetch submissions: {response.status}',
+                                    'statusCode': response.status
+                                }
+                            
+                            data = await response.json()
+                            submissions = data.get('quiz_submissions', [])
+                            all_submissions.extend(submissions)
+
+                            # Check rate limit headers before continuing
+                            
+                            await check_rate_limit(response)
+                            
+                            # Check for next page
+                            link_header = response.headers.get('Link', '')
+                            if 'rel="next"' in link_header:
+                                # Parse next URL from Link header
+                                for link in link_header.split(','):
+                                    if 'rel="next"' in link:
+                                        url = link.split(';')[0].strip('<> ')
+                                        break
+                            else:
+                                cont = False
+                            
+                            params = {}  # Clear params for subsequent requests (URL has them)
+
+
+                case None:
+                    logger.error(f"Failed to determine quiz type: {course_id}, quiz_id: {quiz_id}")
+                    return {'error': f'Failed to determine instructor quiz type.', 'statusCode': 404}
         
         return {
             'submissions': all_submissions,
-            'count': len(all_submissions)
+            'count': len(all_submissions),
+            "is_new_quiz": is_canvas_new_quiz
         }
         
     except Exception as e:
         logger.error(f"Get all course submissions error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
+
 
 async def process_submission_data(submission: dict) -> dict:
     """
@@ -218,8 +337,17 @@ async def process_submission_data(submission: dict) -> dict:
         
         # Process individual questions
         for question in submission.get('questions', []):
+            raw_text = text_utils.normalize_text(question.get('question_text', ''))
+            answers = question.get('answers', [])
+            answer_texts = sorted([
+                text_utils.normalize_text(a.get('text', '').strip())
+                for a in answers if a.get('text', '').strip()
+            ])
+            answer_part = ' ' + ' '.join(answer_texts) if answer_texts else ''
+            question_key = raw_text + answer_part if raw_text else f"question_{question.get('id')}"
             question_data = {
-                'question_id': str(question.get('id')),
+                'question_id': text_utils.build_question_hash(question_key),
+                'canvas_question_id': str(question.get('id')),
                 'question_type': question.get('question_type'),
                 'points': question.get('points', 0),
                 'points_possible': question.get('points_possible', 0),
@@ -475,6 +603,22 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                 # upon every sync interval (since we aggregate across all time)
                 if quiz == quizzes[0]: # Only do this once per course sync
                     await mastery_collection.delete_many({'course_id': str(course_id)})
+
+                # Check if quiz is a new quiz. If it is, get the new quizzes data.
+                if submissions_result.get("is_new_quiz") and submissions:
+                    new_quiz_data = await get_new_quiz_data(canvas_token, course_id, quiz_id)
+
+                    # Check for errors.
+                    if "error" in new_quiz_data:
+                        total_errors += 1
+
+                        logger.error(f"Failed to get New Quiz results for quiz {quiz_id} ({quiz_title}): {new_quiz_data['error']}")
+
+                        continue
+
+                    new_quiz_submission_results = new_quiz_data.get("results")
+                    for submission in submissions:
+                        submission["questions"] = new_quiz_submission_results.get(str(submission.get("user_id")), [])
                 
                 # Internal helper for parallel question fetching
                 semaphore = asyncio.Semaphore(10) # Limit concurrency to 10 requests
@@ -543,12 +687,7 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                 total_attempted = doc.get('total_attempted', 0)
                 percentage = doc.get('mastery_percentage', 0)
 
-                if percentage >= 80:
-                    level = 'advanced'
-                elif percentage >= 60:
-                    level = 'intermediate'
-                else:
-                    level = 'beginner'
+                level = tier_for_score(percentage)
 
                 student_mastery[sid][skill_id] = {
                     'score': round(percentage, 1),
@@ -590,3 +729,113 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
         logger.error(f"Sync course submissions direct error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
+async def get_new_quiz_data(canvas_token: str, course_id: str, quiz_id: str) -> dict:
+    "Get equivalent data of classic quiz for a new quiz."
+
+    try:
+        headers: dict = {"Authorization": f"Bearer {canvas_token}"}
+
+        url: str = f"{getattr(Config, 'CANVAS_NEW_QUIZ_API_URL')}/courses/{course_id}/quizzes/{quiz_id}"
+
+        # Get quiz questions for a new quiz.
+        async with create_canvas_session() as session:
+            async with session.get(f"{url}/items", headers=headers, params={"per_page": 100}) as res:
+                if res.status != 200:
+                    return {"error": f"Failed to get new quiz items: {res.status}", "statusCode": res.status}
+                
+                quiz_data: list = await res.json()
+
+                items: list = [item for item in quiz_data if item.get("entry_type") != "Stimulus"]
+
+                # Sort question items to align with report questions later.
+                items_by_position: dict = {item.get("position"): item for item in items}
+                items = [items_by_position[position] for position in sorted(items_by_position)]
+
+            # Request body to get new quiz report.
+            canvas_quiz_report_request: dict = {
+                "quiz_report[report_type]": "student_analysis",
+                "quiz_report[format]": "csv"
+            }
+
+
+            async with session.post(f"{url}/reports", headers=headers, data=canvas_quiz_report_request) as res:
+                if res.status not in (200, 201):
+                    return {"error": f"Failed to request new quiz report: {res.status}", "statusCode": res.status}
+                
+                progress = await res.json()
+
+                report_progress: dict = progress.get("progress", {})
+
+                # Repeatedly check report status.
+                for i in range(120):
+
+                    # Check if report is still generating.
+                    if report_progress.get("workflow_state") not in ["completed", "failed"]:
+                        await asyncio.sleep(3)
+                        async with session.get(report_progress.get("url"), headers=headers) as resp:
+                            report_progress = await resp.json()
+
+                report_file_url: str = (report_progress.get("results") or {}).get("url", "")
+
+                if report_progress.get("workflow_state", "") != "completed" or not report_file_url:
+                    return {"error": "New quiz report did not finish.", "statusCode": 502}
+                
+                # Download new quiz report.
+                async with session.get(report_file_url, headers=headers) as res:
+                    report_data: str = (await res.text(encoding="utf-8")).lstrip("\ufeff")
+
+                    if res.status != 200 or report_data.startswith('{"errors"'):
+                        logger.error(f"Failed to download new quiz report for quiz {quiz_id}: {report_data[:300]}")
+                        return {"error": "Failed to download new quiz report.", "statusCode": 502}
+                
+
+        # Use CSV to read the report.
+        report_file = io.StringIO(report_data)
+        file_rows: list = list(csv.reader(report_file))
+
+        report_headers: list = file_rows[0]
+
+        question_columns: list = [i for i, name in enumerate(report_headers) if name == "ItemID"]
+
+        if len(question_columns) != len(items):
+            return {"error": "New quiz report does not match the quiz's questions.", "statusCode": 502}
+
+        question_results: dict = {}
+        latest_attempts: dict = {}
+
+        # Parse every question row in the CSV.
+        for row in file_rows[1:]:
+            student_id: str = row[report_headers.index("ID")]
+            attempt: int = int(row[report_headers.index("Attempt")] or 0)
+
+            # Check if the attempt is the latest attempt.
+            if attempt < latest_attempts.get(student_id, 0):
+                continue
+
+            latest_attempts[student_id] = attempt
+
+            questions: list = []
+
+            # Parse all question columns.
+            for item, column in zip(items, question_columns):
+                earned_points: float = float(row[column + 3] or 0)
+                points_possible: float = float(item.get("points_possible") or 0)
+                status: str = row[column + 4]
+
+                # Skip answers that are still waiting on manual grading.
+                if status != "Graded":
+                    continue
+
+                questions.append({
+                    "id": str(item.get("id")),
+                    "question_text": (item.get("entry") or {}).get("item_body"),
+                    "correct": points_possible > 0 and earned_points >= points_possible,
+                })
+
+            question_results[student_id] = questions
+
+        return {"results": question_results}
+
+    except Exception as error:
+        logger.error(f"Error trying to retrieve new quiz data: {str(error)}")
+        return {"error": "Internal server error.", "statusCode": 500}

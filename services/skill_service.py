@@ -5,8 +5,9 @@ import uuid
 from datetime import datetime, timezone
 from services.achieveup_auth_service import achieveup_verify_token
 from config import Config
-
 from mongodb import get_db
+from openai import AsyncOpenAI
+from utils.text_utils import normalize_text, hash_text
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -194,14 +195,14 @@ async def assign_skill_to_question(token: str, data: dict) -> dict:
             return user_result
         
         user_id = user_result.get('user_id')
-        question_id = data.get('question_id')
+        question_text = data.get("question_text")
         skill_id = data.get('skill_id')
         matrix_id = data.get('matrix_id')
         
-        if not question_id or not skill_id or not matrix_id:
+        if not question_text or not skill_id or not matrix_id:
             return {
                 'error': 'Missing required fields',
-                'message': 'Question ID, skill ID, and matrix ID are required',
+                'message': 'Question text, skill ID, and matrix ID are required',
                 'statusCode': 400
             }
         
@@ -223,6 +224,8 @@ async def assign_skill_to_question(token: str, data: dict) -> dict:
                 'statusCode': 404
             }
         
+        question_id: str = hash_text(normalize_text(question_text))
+
         # Create or update assignment
         assignment_doc = {
             'question_id': question_id,

@@ -22,6 +22,7 @@ from routes.badge_routes import badge_bp
 from routes.progress_routes import progress_bp
 from routes.analytics_routes import analytics_bp
 from routes.achieveup_routes import achieveup_bp
+from routes.skill_video_routes import skill_video_bp
 from mongodb import get_db
 
 from config import Config
@@ -92,6 +93,7 @@ app.register_blueprint(skill_bp)
 app.register_blueprint(badge_bp)
 app.register_blueprint(progress_bp)
 app.register_blueprint(analytics_bp)
+app.register_blueprint(skill_video_bp)
 
 # Apply CORS after routes are initialized
 
