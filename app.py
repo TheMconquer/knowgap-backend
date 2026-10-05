@@ -17,7 +17,6 @@ from routes.support_routes import init_support_routes
 from routes.course_routes import init_course_routes
 from routes.auth_routes import auth_bp
 from routes.canvas_routes import canvas_bp
-from routes.skill_routes import skill_bp
 from routes.badge_routes import badge_bp
 from routes.progress_routes import progress_bp
 from routes.analytics_routes import analytics_bp
