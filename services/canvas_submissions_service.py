@@ -338,8 +338,9 @@ async def process_submission_data(submission: dict) -> dict:
         # Process individual questions
         for question in submission.get('questions', []):
             answer_texts = [a.get('text') or '' for a in question.get('answers', [])]
-            question_key = text_utils.build_question_key(question.get('question_text', ''), answer_texts) \
-                or f"question_{question.get('id')}"
+            question_key = text_utils.build_question_key(
+                question.get('question_text', ''), answer_texts, fallback_id=question.get('id')
+            )
             
             question_data = {
                 'question_id': text_utils.hash_text(question_key),

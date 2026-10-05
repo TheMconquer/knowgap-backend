@@ -699,8 +699,9 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                 answers = question.get('answers', [])
                                 raw_answer_texts = [a.get('text') or '' for a in answers]
                                 answer_texts = [text_utils.normalize_text(t) for t in raw_answer_texts if t.strip()]
-                                question_key = text_utils.build_question_key(question_text, raw_answer_texts) \
-                                    or f"question_{question.get('id')}"
+                                question_key = text_utils.build_question_key(
+                                    question_text, raw_answer_texts, fallback_id=question.get('id')
+                                )
                                 
                                 questions.append({
                                     'id': str(question.get('id')),
@@ -738,8 +739,9 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                     "id": str(question.get("id")),
                                     "question_text": item_body,
                                     "quiz_id": str(quiz_id),
-                                    "question_key": text_utils.build_question_key(item_body)
-                                                    or f"question_{question.get('id')}"
+                                    "question_key": text_utils.build_question_key(
+                                        item_body, fallback_id=question.get('id')
+                                    )
                                 })
                             return questions
                         else:

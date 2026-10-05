@@ -35,9 +35,14 @@ def extract_attachments(html: str) -> tuple[list[str], list[str]]:
                 urls.append(src)
     return ids, urls
 
-def build_question_key(question_text: str, answer_texts: list[str] | None = None) -> str:
+def build_question_key(question_text: str, answer_texts: list[str] | None = None,
+                       fallback_id: str | int | None = None) -> str:
     """Builds the identity key for a question: normalized text, any embedded image file IDs,
-    and sorted normalized answers."""
+    and sorted normalized answers.
+
+    If that comes out empty (no text, no Canvas image, no answers), falls back to
+    question_<fallback_id> so empty questions don't all share the key "". Callers must pass
+    the Canvas question id so question fetches and submission syncs produce the same key."""
     text = normalize_text(question_text)
     ids, _ = extract_attachments(question_text)
     if ids:
@@ -45,4 +50,7 @@ def build_question_key(question_text: str, answer_texts: list[str] | None = None
     answers = sorted(
         normalize_text(a) for a in (answer_texts or []) if a and a.strip()
     )
-    return (text + ' ' + ' '.join(answers)).strip()
+    key = (text + ' ' + ' '.join(answers)).strip()
+    if not key and fallback_id is not None:
+        return f"question_{fallback_id}"
+    return key
