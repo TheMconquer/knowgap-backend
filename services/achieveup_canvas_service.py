@@ -5,7 +5,6 @@ import ssl
 import logging
 import re
 from datetime import datetime, timezone
-from bs4 import BeautifulSoup
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_canvas_demo_service import (
@@ -693,16 +692,15 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                 question_text = question.get('question_text', '')
 
                                 # Extract Canvas file IDs from any embedded images
-                                attachment_ids, attachment_urls = text_utils.extract_attachments(question_text)
+                                _, attachment_ids, attachment_urls = text_utils.parse_html(question_text)
 
-                                
                                 answers = question.get('answers', [])
                                 raw_answer_texts = [a.get('text') or '' for a in answers]
                                 answer_texts = [text_utils.normalize_text(t) for t in raw_answer_texts if t.strip()]
                                 question_key = text_utils.build_question_key(
                                     question_text, raw_answer_texts, fallback_id=question.get('id')
                                 )
-                                
+
                                 questions.append({
                                     'id': str(question.get('id')),
                                     'question_text': question_text,

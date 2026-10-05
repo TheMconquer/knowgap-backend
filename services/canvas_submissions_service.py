@@ -12,7 +12,6 @@ import aiohttp
 import asyncio
 import logging
 from datetime import datetime, timezone
-from html.parser import HTMLParser
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
@@ -27,27 +26,6 @@ from utils import text_utils
 
 # Set up logging
 logger = logging.getLogger(__name__)
-
-
-class _TextExtractor(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.chunks = []
-
-    def handle_data(self, data):
-        self.chunks.append(data)
-
-
-def extract_text_from_html(html_string: Optional[str]) -> str:
-    """Strip HTML tags from a Canvas question_text, mirroring the frontend's
-    div.textContent extraction (SkillAssignmentInterface.tsx's
-    extractTextFromHTML) so submission questions match the question-text
-    keys stored in AchieveUp_Question_Skills at skill-assignment time."""
-    if not html_string:
-        return ''
-    parser = _TextExtractor()
-    parser.feed(html_string)
-    return ''.join(parser.chunks)
 
 # MongoDB setup
 db = get_db()
@@ -341,7 +319,7 @@ async def process_submission_data(submission: dict) -> dict:
             question_key = text_utils.build_question_key(
                 question.get('question_text', ''), answer_texts, fallback_id=question.get('id')
             )
-            
+
             question_data = {
                 'question_id': text_utils.hash_text(question_key),
                 'canvas_question_id': str(question.get('id')),
