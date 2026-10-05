@@ -5,8 +5,7 @@ from services.skill_service import (
     update_skill_matrix,
     delete_skill_matrix,
     get_course_skill_matrices,
-    assign_skill_to_question,
-    get_skill_suggestions
+    assign_skill_to_question
 )
 
 skill_bp = Blueprint('skill', __name__)
@@ -222,48 +221,6 @@ async def assign_skill_to_question_route():
         
         # Call skill service
         result = await assign_skill_to_question(token, data)
-        
-        if 'error' in result:
-            return jsonify({
-                'error': result['error'],
-                'message': result['error'],
-                'statusCode': result['statusCode']
-            }), result['statusCode']
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            'error': 'Internal server error',
-            'message': 'An unexpected error occurred',
-            'statusCode': 500
-        }), 500
-
-@skill_bp.route('/skills/suggest', methods=['POST'])
-async def get_skill_suggestions_route():
-    """Get AI-powered skill suggestions for a question. (AchieveUp only)"""
-    try:
-        # Get token from Authorization header
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({
-                'error': 'Missing token',
-                'message': 'Authorization header with Bearer token is required',
-                'statusCode': 401
-            }), 401
-        
-        token = auth_header.split(' ')[1]
-        data = await request.get_json()
-        
-        if not data:
-            return jsonify({
-                'error': 'Invalid request',
-                'message': 'Request body is required',
-                'statusCode': 400
-            }), 400
-        
-        # Call skill service
-        result = await get_skill_suggestions(token, data)
         
         if 'error' in result:
             return jsonify({
