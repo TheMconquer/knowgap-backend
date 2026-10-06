@@ -32,7 +32,6 @@ The `routes` directory contains all route definitions for the KnowGap Backend AP
 - **Purpose**: Handles operations related to user tokens, including adding, updating, and retrieving tokens for secure access.
 - **Key Endpoints**:
   - `POST /add-token` - Adds or updates a user token for authentication.
-  - `GET /get-user` - Retrieves token details for a specific user by `user_id`.
 
 ## Route Initialization
 

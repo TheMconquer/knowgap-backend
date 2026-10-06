@@ -3,8 +3,9 @@
 import logging
 from datetime import datetime, timezone
 from config import Config
-
 from mongodb import get_db
+from services.badge_service import generate_badges_for_user
+from utils.text_utils import normalize_text, hash_text
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -37,11 +38,6 @@ async def update_student_mastery(submission_data: dict) -> None:
         
         # Note: Using the corrected collection name here.
         # The schema in DB seems to be {question_id: ..., skills: [...]} or similar.
-        # Based on skill_service.py: assign_skill_to_question upserts:
-        # {'question_id': qid, 'matrix_id': mid, ...}
-        # But wait, skill_service.py puts 'skill_id' directly in the doc: 
-        # {'question_id': ..., 'skill_id': ..., 'matrix_id': ...}
-        # So one document per assignment.
         
         # Let's query all assignments for questions in this submission
         question_ids = [q['question_id'] for q in submission_data.get('questions', [])]

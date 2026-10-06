@@ -101,10 +101,10 @@ This stops and removes the containers but preserves MongoDB data in the named `m
 The backend is organized into modular subdirectories to keep the codebase maintainable and scalable.
 
 ### 1. `routes/`
-Defines the API endpoints, organized by feature area: `base_routes.py`, `auth_routes.py`, `user_routes.py`, `course_routes.py`, `video_routes.py`, `canvas_routes.py`, `skill_routes.py`, `progress_routes.py`, `badge_routes.py`, `analytics_routes.py`, `instructor_routes.py`, `support_routes.py`, `achieveup_routes.py`, and `course_utils.py`. Each route file registers its endpoints with the main app instance.
+Defines the API endpoints, organized by feature area: `base_routes.py`, `auth_routes.py`, `user_routes.py`, `course_routes.py`, `video_routes.py`, `canvas_routes.py`, `progress_routes.py`, `badge_routes.py`, `analytics_routes.py`, `instructor_routes.py`, `support_routes.py`, `achieveup_routes.py`, and `course_utils.py`. Each route file registers its endpoints with the main app instance.
 
 ### 2. `services/`
-Contains the core business logic and database interactions, separated from the routing layer. Key files include `video_service.py`, `course_service.py`, `user_service.py`, `skill_service.py`, `progress_service.py`, `badge_service.py`, `analytics_service.py`, `mastery_service.py`, `support_service.py`, and several `achieveup_*_service.py` files handling AI, auth, and Canvas-specific logic.
+Contains the core business logic and database interactions, separated from the routing layer. Key files include `video_service.py`, `course_service.py`, `user_service.py`, `progress_service.py`, `badge_service.py`, `analytics_service.py`, `mastery_service.py`, `support_service.py`, and several `achieveup_*_service.py` files handling AI, auth, and Canvas-specific logic.
 
 ### 3. `utils/`
 Shared helper functions: `encryption_utils.py` (token encryption/decryption), `youtube_utils.py` (YouTube API helpers), `ai_utils.py` (AI-generated core topics), `course_utils.py`, and `db_utils.py`.
