@@ -5,7 +5,6 @@ import ssl
 import logging
 import re
 from datetime import datetime, timezone
-from bs4 import BeautifulSoup
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_canvas_demo_service import (
@@ -693,27 +692,23 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                 question_text = question.get('question_text', '')
 
                                 # Extract Canvas file IDs from any embedded images
-                                soup = BeautifulSoup(question_text, 'html.parser')
-                                attachment_ids = []
-                                attachment_urls = []
-                                for img in soup.find_all('img'):
-                                    endpoint = img.get('data-api-endpoint', '')
-                                    src = img.get('src', '')
-                                    if '/files/' in endpoint:
-                                        file_id = endpoint.split('/files/')[-1].split('/')[0]
-                                        attachment_ids.append(file_id)
-                                        if src:
-                                            attachment_urls.append(src)
+                                _, attachment_ids, attachment_urls = text_utils.parse_html(question_text)
 
                                 answers = question.get('answers', [])
-                                answer_texts = [text_utils.normalize_text(a.get('text', '')) for a in answers if a.get('text', '').strip()]
+                                raw_answer_texts = [a.get('text') or '' for a in answers]
+                                answer_texts = [text_utils.normalize_text(t) for t in raw_answer_texts if t.strip()]
+                                question_key = text_utils.build_question_key(
+                                    question_text, raw_answer_texts, fallback_id=question.get('id')
+                                )
+
                                 questions.append({
                                     'id': str(question.get('id')),
                                     'question_text': question_text,
                                     'quiz_id': str(quiz_id),
                                     'attachment_ids': attachment_ids,
                                     'attachment_urls': attachment_urls,
-                                    'answer_texts': answer_texts
+                                    'answer_texts': answer_texts,
+                                    'question_key': question_key
                                 })
                             return questions
                         else:
@@ -733,15 +728,20 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
                                 return {'error': f'Failed to fetch instructor quiz questions.', 'statusCode': res.status}
 
                             # Return all question fields that are not stimulus.
-                            return (
-                            [
-                                {
+                            questions = []
+                            for question in questions_data:
+                                if question.get("entry_type") == "Stimulus":
+                                    continue
+                                item_body = (question.get("entry") or {}).get("item_body")
+                                questions.append({
                                     "id": str(question.get("id")),
-                                    "question_text": (question.get("entry") or {}).get("item_body"),
-                                    "quiz_id": str(quiz_id)
-                                } for question in questions_data
-                                if question.get("entry_type") != "Stimulus"
-                            ])
+                                    "question_text": item_body,
+                                    "quiz_id": str(quiz_id),
+                                    "question_key": text_utils.build_question_key(
+                                        item_body, fallback_id=question.get('id')
+                                    )
+                                })
+                            return questions
                         else:
                             logger.error(f"Canvas instructor quiz questions error: {res.status} - {await res.text()}")
                             return {'error': f'Failed to fetch instructor quiz questions: {res.status}', 'statusCode': res.status}

@@ -12,7 +12,6 @@ import aiohttp
 import asyncio
 import logging
 from datetime import datetime, timezone
-from html.parser import HTMLParser
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
@@ -27,27 +26,6 @@ from utils import text_utils
 
 # Set up logging
 logger = logging.getLogger(__name__)
-
-
-class _TextExtractor(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.chunks = []
-
-    def handle_data(self, data):
-        self.chunks.append(data)
-
-
-def extract_text_from_html(html_string: Optional[str]) -> str:
-    """Strip HTML tags from a Canvas question_text, mirroring the frontend's
-    div.textContent extraction (SkillAssignmentInterface.tsx's
-    extractTextFromHTML) so submission questions match the question-text
-    keys stored in AchieveUp_Question_Skills at skill-assignment time."""
-    if not html_string:
-        return ''
-    parser = _TextExtractor()
-    parser.feed(html_string)
-    return ''.join(parser.chunks)
 
 # MongoDB setup
 db = get_db()
@@ -337,16 +315,13 @@ async def process_submission_data(submission: dict) -> dict:
         
         # Process individual questions
         for question in submission.get('questions', []):
-            raw_text = text_utils.normalize_text(question.get('question_text', ''))
-            answers = question.get('answers', [])
-            answer_texts = sorted([
-                text_utils.normalize_text(a.get('text', '').strip())
-                for a in answers if a.get('text', '').strip()
-            ])
-            answer_part = ' ' + ' '.join(answer_texts) if answer_texts else ''
-            question_key = raw_text + answer_part if raw_text else f"question_{question.get('id')}"
+            answer_texts = [a.get('text') or '' for a in question.get('answers', [])]
+            question_key = text_utils.build_question_key(
+                question.get('question_text', ''), answer_texts, fallback_id=question.get('id')
+            )
+
             question_data = {
-                'question_id': text_utils.build_question_hash(question_key),
+                'question_id': text_utils.hash_text(question_key),
                 'canvas_question_id': str(question.get('id')),
                 'question_type': question.get('question_type'),
                 'points': question.get('points', 0),
