@@ -42,6 +42,7 @@ class Config:
     ACHIEVEUP_STUDENT_SKILL_MASTERY_COLLECTION = "AchieveUp_Student_Skill_Mastery"
     ACHIEVEUP_BADGES_COLLECTION = "AchieveUp_Badges"
     ACHIEVEUP_USER_BADGES_COLLECTION = "AchieveUp_User_Badges"
+    ACHIEVEUP_BADGE_SHARING_COLLECTION = "AchieveUp_Badge_Sharing"
     ACHIEVEUP_BADGE_PROGRESS_COLLECTION = "AchieveUp_Badge_Progress"
     ACHIEVEUP_USER_PROGRESS_COLLECTION = "AchieveUp_User_Progress"
     ACHIEVEUP_PROGRESS_ANALYTICS_COLLECTION = "AchieveUp_Progress_Analytics"
@@ -64,6 +65,10 @@ class Config:
     CANVAS_API_URL = os.getenv("CANVAS_API_URL", "https://canvas.instructure.com/api/v1")
     CANVAS_GRAPHQL_API_URL = os.getenv("CANVAS_GRAPHQL_API_URL", "https://canvas.instructure.com/api/graphql")
     CANVAS_NEW_QUIZ_API_URL = os.getenv("CANVAS_NEW_QUIZ_API_URL", "https://canvas.instructure.com/api/quiz/v1")
+
+    # Public address of the AchieveUp frontend, used to build links people copy and share
+    # (e.g. badge share links). Set to http://localhost:3000 in .env for local development.
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "https://achieveupapp.com").rstrip("/")
 
     # Canvas API Configuration
     CANVAS_API_RATE_LIMIT = int(os.getenv("CANVAS_API_RATE_LIMIT", "100"))  # requests per minute

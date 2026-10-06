@@ -475,15 +475,16 @@ async def get_student_earned_badges_route(student_id):
             }), 401
         
         token = auth_header.split(' ')[1]
-        
+        course_id = request.args.get('course_id')
+
         # Call badge service
         from services.badge_service import get_student_earned_badges
-        result = await get_student_earned_badges(token, student_id)
-        
+        result = await get_student_earned_badges(token, student_id, course_id)
+
         if 'error' in result:
             return jsonify({
                 'error': result['error'],
-                'message': result['error'],
+                'message': result.get('message', result['error']),
                 'statusCode': result['statusCode']
             }), result['statusCode']
         
@@ -496,14 +497,15 @@ async def get_student_earned_badges_route(student_id):
             'statusCode': 500
         }), 500
 
-@achieveup_bp.route('/achieveup/public/badges/student/<student_id>/earned', methods=['GET'])
-async def get_public_student_earned_badges_route(student_id):
-    """Get all earned badges for a specific student publicly. (AchieveUp only)"""
+@achieveup_bp.route('/achieveup/public/badges/share/<share_id>/earned', methods=['GET'])
+async def get_public_badges_by_share_route(share_id):
+    """Get all earned badges for a student's publicly shared badge profile. (AchieveUp only)"""
     try:
-        from services.badge_service import get_public_student_earned_badges
-        # Call badge service directly without token verification
-        result = await get_public_student_earned_badges(student_id)
-        
+        from services.badge_service import get_public_badges_by_share
+        # Public by design: access is gated by the unguessable share_id itself,
+        # not a token — the student must have explicitly opted in to sharing.
+        result = await get_public_badges_by_share(share_id)
+
         if 'error' in result:
             return jsonify({
                 'error': result['error'],
@@ -512,7 +514,151 @@ async def get_public_student_earned_badges_route(student_id):
             }), result.get('statusCode', 500)
         
         return jsonify(result), 200
-        
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/badges/share-profile', methods=['POST'])
+async def generate_badge_share_link_route():
+    """Get or create a badge share link, for the caller's own profile or
+    (if the caller is an instructor who teaches them) another student's. (AchieveUp only)"""
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+        data = await request.get_json(silent=True) or {}
+        student_id = data.get('student_id')
+        course_id = data.get('course_id')
+
+        # Call badge service
+        from services.badge_service import generate_badge_share_link
+        result = await generate_badge_share_link(token, student_id, course_id)
+
+        if 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/badges/opt-out', methods=['POST'])
+async def opt_out_badge_sharing_route():
+    """Turn off badge sharing for the caller's own profile (Settings page). (AchieveUp only)"""
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+
+        # Call badge service
+        from services.badge_service import set_badge_sharing_opt_out
+        result = await set_badge_sharing_opt_out(token, True)
+
+        if 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/badges/opt-in', methods=['POST'])
+async def opt_in_badge_sharing_route():
+    """Turn badge sharing back on for the caller's own profile (Settings page). (AchieveUp only)"""
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+
+        # Call badge service
+        from services.badge_service import set_badge_sharing_opt_out
+        result = await set_badge_sharing_opt_out(token, False)
+
+        if 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/badges/share-status', methods=['GET'])
+async def get_badge_share_status_route():
+    """Check the caller's own current badge-sharing link and opt-out preference. (AchieveUp only)"""
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+
+        # Call badge service
+        from services.badge_service import get_badge_share_status
+        result = await get_badge_share_status(token)
+
+        if 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify(result), 200
+
     except Exception as e:
         return jsonify({
             'error': 'Internal server error',

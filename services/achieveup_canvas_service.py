@@ -68,7 +68,7 @@ def _extract_next_canvas_link(link_header: str) -> str:
     return None
 
 
-async def _fetch_all_canvas_pages(session, url: str, headers: dict, params: dict = None):
+async def _fetch_all_canvas_pages(session, url: str, headers: dict, params: dict = None, resource: str = 'instructor courses'):
     """Fetch all pages from a Canvas endpoint and return a combined list payload."""
     all_items = []
     next_url = url
@@ -82,7 +82,7 @@ async def _fetch_all_canvas_pages(session, url: str, headers: dict, params: dict
                 error_text = await response.text()
                 logger.error(f"Canvas pagination request failed: {response.status} - {error_text}")
                 return None, {
-                    'error': f'Failed to fetch instructor courses: {response.status}',
+                    'error': f'Failed to fetch {resource}: {response.status}',
                     'statusCode': response.status
                 }
 
@@ -774,31 +774,26 @@ async def get_course_students(canvas_token: str, course_id: str) -> dict:
         }
         
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
-                if response.status == 200:
-                    enrollments_data = await response.json()
-                    
-                    students = []
-                    for enrollment in enrollments_data:
-                        user = enrollment.get('user', {})
-                        students.append({
-                            'id': str(user.get('id')),
-                            'name': user.get('name', ''),
-                            'email': user.get('email', ''),
-                            'sortable_name': user.get('sortable_name', ''),
-                            'enrollment_state': enrollment.get('enrollment_state', ''),
-                            'course_id': str(course_id)
-                        })
-                    
-                    return students
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Canvas students error: {response.status} - {error_text}")
-                    return {
-                        'error': f'Failed to fetch students: {response.status}',
-                        'statusCode': response.status
-                    }
-                    
+            enrollments_data, error = await _fetch_all_canvas_pages(
+                session, url, headers, params, resource='students'
+            )
+            if error:
+                return error
+
+            students = []
+            for enrollment in enrollments_data:
+                user = enrollment.get('user', {})
+                students.append({
+                    'id': str(user.get('id')),
+                    'name': user.get('name', ''),
+                    'email': user.get('email', ''),
+                    'sortable_name': user.get('sortable_name', ''),
+                    'enrollment_state': enrollment.get('enrollment_state', ''),
+                    'course_id': str(course_id)
+                })
+
+            return students
+
     except Exception as e:
         logger.error(f"Get course students error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
