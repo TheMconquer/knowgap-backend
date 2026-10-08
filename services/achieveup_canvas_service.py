@@ -974,3 +974,15 @@ async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bo
                 else:
                     logger.error(f"Canvas' GraphQL API call returned an error.")
                     return
+
+async def get_token_expiration(canvas_api_token: str) -> bool:
+    url = f"{CANVAS_API_URL}/users/self/tokens/{canvas_api_token[:10]}..."
+    
+    headers = {
+            'Authorization': f'Bearer {canvas_api_token}',
+            'Content-Type': 'application/json'
+            }
+
+    async with create_canvas_session() as session:
+        async with session.get(url, headers=headers) as res:
+            data = res.json()
