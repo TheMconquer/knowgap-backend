@@ -396,3 +396,10 @@ async def refresh_token_route():
             'message': 'An unexpected error occurred',
             'statusCode': 500
         }), 500 
+    
+# Test route.
+@auth_bp.route('/auth/test-canvas-token-expiration', methods=['GET'])
+async def test_canvas_token_expiration_route():
+    from services.achieveup_canvas_service import get_token_expiration
+    canvas_token = request.headers.get('Authorization').split(' ')[2]
+    return jsonify(await get_token_expiration(canvas_token)), 200

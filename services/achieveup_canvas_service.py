@@ -976,12 +976,12 @@ async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bo
                     return
 
 async def get_token_expiration(canvas_api_token: str) -> bool:
-    url = f"{CANVAS_API_URL}/users/self/tokens/{canvas_api_token[:10]}..."
-    
     headers = {
             'Authorization': f'Bearer {canvas_api_token}',
             'Content-Type': 'application/json'
             }
+
+    url = f"{CANVAS_API_URL}/users/self/tokens/{canvas_api_token[:10]}..."
 
     async with create_canvas_session() as session:
         async with session.get(url, headers=headers) as res:
