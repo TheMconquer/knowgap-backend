@@ -975,26 +975,45 @@ async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bo
                     logger.error(f"Canvas' GraphQL API call returned an error.")
                     return
 
-async def get_token_expiration(canvas_api_token: str) -> bool:
+async def get_token_expiration(canvas_api_token: str) -> tuple[int, datetime | None]:
+    """
+    Checks whether a Canvas token has an expiration data, and if so returns the expiration date.
+    HTTP status codes are used to convey whether the token is valid or not.
+    """
+
     headers = {
             'Authorization': f'Bearer {canvas_api_token}',
             'Content-Type': 'application/json'
             }
 
-    url = f"{CANVAS_API_URL}/users/self/tokens/{canvas_api_token[:10]}..."
+    url = f"{CANVAS_API_URL}/users/self/tokens/{canvas_api_token[:10]}"
 
     try:
         async with create_canvas_session() as session:
             async with session.get(url, headers=headers) as res:
-                if res.status != 200:
+                
+                # If statements to check the API status code
+                # and return the correct HTTP code.
+                if res.status in (401, 404):
+                    return 401, None
+                elif res.status != 200:
                     error_text = await res.text()
                     logger.error(f"Canvas API validation error: {res.status} - {error_text}")
-                    return {
-                        'message': f'Canvas API returned error {res.status}. Please try again later.',
-                        "error": "Internal server error.",
-                        "statusCode": 500
-                    }
+                    return res.status, None
+                
+                token_information = await res.json()
+
+                # Get token expiration data.
+                expiration_information: str | None = token_information.get("expires_at")
+                expiration_date: datetime | None = (
+                                datetime.fromisoformat(expiration_information.replace("Z", "+00:00"))
+                                .astimezone(timezone.utc)
+                                .replace(tzinfo=None)
+                                if expiration_information else None
+                            )
+                
+                return 200, expiration_date
 
     except Exception as err:
         logger.error(f"Error checking token information: {str(err)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
+        return 500, None
