@@ -983,6 +983,18 @@ async def get_token_expiration(canvas_api_token: str) -> bool:
 
     url = f"{CANVAS_API_URL}/users/self/tokens/{canvas_api_token[:10]}..."
 
-    async with create_canvas_session() as session:
-        async with session.get(url, headers=headers) as res:
-            data = res.json()
+    try:
+        async with create_canvas_session() as session:
+            async with session.get(url, headers=headers) as res:
+                if res.status != 200:
+                    error_text = await res.text()
+                    logger.error(f"Canvas API validation error: {res.status} - {error_text}")
+                    return {
+                        'message': f'Canvas API returned error {res.status}. Please try again later.',
+                        "error": "Internal server error.",
+                        "statusCode": 500
+                    }
+
+    except Exception as err:
+        logger.error(f"Error checking token information: {str(err)}")
+        return {'error': 'Internal server error', 'statusCode': 500}
