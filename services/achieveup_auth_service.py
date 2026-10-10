@@ -296,6 +296,18 @@ async def achieveup_verify_token(token: str) -> dict:
                 'statusCode': 404
             }
         
+        token_expiration = user.get("canvas_token_expiration")
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        if token_expiration is None:
+            token_status = 'Valid'
+        elif token_expiration <= now:
+            token_status = 'Expired'
+        elif token_expiration <= now + timedelta(days=5):
+            token_status = 'Expiring Soon'
+        else:
+            token_status = 'Valid'
+
         # Return user info (without password and Canvas token)
         user_info = {
             'id': user['user_id'],
@@ -305,7 +317,9 @@ async def achieveup_verify_token(token: str) -> dict:
             'hasCanvasToken': bool(user.get('canvas_api_token')),
             'canvasTokenType': user.get('canvas_token_type', 'student'),
             'canvas_student_id': user.get('canvas_student_id'),
-            'has_student_access': user.get('has_student_access', False)
+            'has_student_access': user.get('has_student_access', False),
+            "canvasTokenExpiresAt": token_expiration.isoformat() if token_expiration else None,
+            "canvasTokenStatus": token_status
         }
 
         return {'user': user_info}
