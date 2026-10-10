@@ -133,7 +133,7 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
         # try instructor first; a real teaching-enrolled token should grant
         # instructor access automatically, no hint needed. Fall back to
         # confirming it's at least a valid student token; reject otherwise.
-        from services.achieveup_canvas_service import validate_canvas_token
+        from services.achieveup_canvas_service import validate_canvas_token, get_token_expiration
 
         instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
         if instructor_check['valid']:
@@ -177,6 +177,11 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
         user_doc['canvas_api_token'] = encrypted_token
         user_doc['canvas_token_created_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
         user_doc['canvas_token_last_validated'] = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Get the expiration date for the token.
+        expiration_status, expiration_date = await get_token_expiration(canvas_api_token)
+        if expiration_status == 200:
+            user_doc["canvas_token_expiration"] = expiration_date
 
         # Insert user into database. A DuplicateKeyError here means another
         # request won the race between the find_one check above and this
