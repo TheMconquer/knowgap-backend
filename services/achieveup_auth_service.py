@@ -371,7 +371,7 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             # same instructor-first-then-student-fallback pattern as signup, so a
             # student can't hand-craft a request claiming canvasTokenType=instructor
             # to get promoted on a token that was never actually verified as one.
-            from services.achieveup_canvas_service import validate_canvas_token
+            from services.achieveup_canvas_service import validate_canvas_token, get_token_expiration
 
             instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
             if instructor_check['valid']:
@@ -401,6 +401,12 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             update_data['role'] = token_type
             update_data['canvas_student_id'] = validated_check.get('user_info', {}).get('id')
             update_data['has_student_access'] = has_student_access
+
+            expiration_status, expiration_date = await get_token_expiration(canvas_api_token)
+            if expiration_status == 200:
+                update_data["canvas_token_expiration"] = expiration_date
+            else:
+                await achieveup_users_collection.update_one({'user_id': user_id}, {'$unset': {'canvas_token_expiration': ''}})
 
 
         # Update user in database
