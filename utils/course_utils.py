@@ -172,3 +172,11 @@ async def get_incorrect_question_data(course_id, quiz_id, link):
     except Exception as e:
         print(f"Error in get_incorrect_question_data: {e}")
         raise e
+
+
+def course_id_filter(course_id) -> dict:
+    """Mongo filter matching a course_id stored either as text or as a number."""
+    values = [str(course_id)]
+    if str(course_id).isdigit():
+        values.append(int(course_id))
+    return {'course_id': {'$in': values}}

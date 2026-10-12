@@ -798,6 +798,19 @@ async def get_course_students(canvas_token: str, course_id: str) -> dict:
         logger.error(f"Get course students error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
+async def get_course_name(canvas_token: str, course_id: str) -> str | None:
+    """Fetch just a course's name from Canvas (no syllabus or other includes)."""
+    try:
+        headers = {'Authorization': f'Bearer {canvas_token}'}
+        async with create_canvas_session() as session:
+            async with session.get(f"{CANVAS_API_URL}/courses/{course_id}", headers=headers) as response:
+                if response.status == 200:
+                    return (await response.json()).get('name') or None
+                logger.error(f"Canvas course name error for {course_id}: {response.status} - {await response.text()}")
+    except Exception as e:
+        logger.error(f"Get course name error for {course_id}: {str(e)}")
+    return None
+
 async def get_course_detailed_info(canvas_token: str, course_id: str) -> dict:
     """Get detailed course information including syllabus and description."""
     try:

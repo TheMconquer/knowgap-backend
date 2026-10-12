@@ -87,7 +87,8 @@ async def create_skill_matrix(token: str, course_id: str, matrix_name: str, skil
             'matrix_name': matrix_name,
             'skills': skills,
             'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
-            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None)
+            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None),
+            'created_by': user['id']
         }
         
         # Insert into database
