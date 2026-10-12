@@ -977,8 +977,9 @@ async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bo
 
 async def get_token_expiration(canvas_api_token: str) -> tuple[int, datetime | None]:
     """
-    Checks whether a Canvas token has an expiration data, and if so returns the expiration date.
-    HTTP status codes are used to convey whether the token is valid or not.
+    Checks whether a Canvas token has an expiration date, and if so returns the expiration date.
+    HTTP status codes are used to convey whether the token is valid or not. If the returned status
+    is 200 paired with a None value, the token has no expiration date set.
     """
 
     headers = {
