@@ -1197,7 +1197,6 @@ async def achieveup_ai_suggest_skills_route():
 @achieveup_bp.route('/achieveup/ai/analyze-questions', methods=['POST'])
 async def achieveup_ai_analyze_questions_route():
     """AI-powered question analysis (frontend-requested endpoint). (AchieveUp only)"""
-    print('is this being called? line 1163')
     try:
         # Get token from Authorization header
         auth_header = request.headers.get('Authorization')
