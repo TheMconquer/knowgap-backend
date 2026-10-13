@@ -1,6 +1,5 @@
 import logging
 import asyncio
-import os
 from quart import Quart, request
 from quart_cors import cors
 from dotenv import load_dotenv

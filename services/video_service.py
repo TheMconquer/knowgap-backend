@@ -209,47 +209,6 @@ async def remove_video(quiz_id, question_id):
     
     return {"message": "Video successfully removed", "success": True}
 
-async def set_video_watched(student_id, course_id, video_link, watched):
-    """Set or unset a video as watched for a student in a course."""
-    course_key = str(course_id)
-    student = await students_collection.find_one({"_id": student_id})
-    if not student:
-        return {"error": "Student not found"}
-    # Initialize watched_videos dict if missing
-    if "watched_videos" not in student or not isinstance(student["watched_videos"], dict):
-        await students_collection.update_one(
-            {"_id": student_id},
-            {"$set": {"watched_videos": {}}}
-        )
-        student["watched_videos"] = {}
-    # Initialize course array if missing
-    if course_key not in student["watched_videos"] or not isinstance(student["watched_videos"][course_key], list):
-        await students_collection.update_one(
-            {"_id": student_id},
-            {"$set": {f"watched_videos.{course_key}": []}}
-        )
-    if watched:
-        # Add video_link to watched_videos[course_key] if not present
-        await students_collection.update_one(
-            {"_id": student_id},
-            {"$addToSet": {f"watched_videos.{course_key}": video_link}}
-        )
-    else:
-        # Remove video_link from watched_videos[course_key]
-        await students_collection.update_one(
-            {"_id": student_id},
-            {"$pull": {f"watched_videos.{course_key}": video_link}}
-        )
-    return {"success": True}
-
-async def get_watched_videos(student_id, course_id):
-    """Get the list of watched video links for a student in a course."""
-    course_key = str(course_id)
-    student = await students_collection.find_one({"_id": student_id})
-    if not student:
-        return []
-    watched_dict = student.get("watched_videos", {})
-    return watched_dict.get(course_key, [])
 
 video_votes_collection = db["video_votes"]
 
