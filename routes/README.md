@@ -2,62 +2,141 @@
 
 ## Overview
 
-The `routes` directory contains all route definitions for the KnowGap Backend API. Each route file is organized by functionality to handle different aspects of the application, such as managing videos, courses, and user tokens. Each route file initializes its respective endpoints through a dedicated function (`init_<route_name>_routes`) that registers routes with the main application instance in `app.py`.
+The `routes` directory contains all route definitions for the KnowGap Backend API. Each route file is organized by functionality to handle different aspects of the application, such as authentication, Canvas data, skill matrices, badges, and videos. Routes are registered with the main application instance in `app.py` in one of two ways:
+
+- **KnowGap extension routes** use a dedicated initialization function (`init_<route_name>_routes`) that registers the routes directly on the app.
+- **AchieveUp routes** are defined on a Quart `Blueprint` (e.g. `auth_bp`) that is registered with `app.register_blueprint(...)`.
+
+Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <JWT>` header obtained from `/auth/login` or `/auth/signup`.
 
 ## Route Files
 
 ### 1. `base_routes.py`
-- **Purpose**: Contains foundational routes, including the root (`/`) endpoint for a welcome or health check message.
+- **Purpose**: Contains foundational routes, including the root (`/`) endpoint for a welcome or health check message, and the CORS preflight (`OPTIONS`) handler.
 - **Main Endpoint**:
   - `GET /` - Returns a welcome message to indicate that the API is active.
 
-### 2. `video_routes.py`
-- **Purpose**: Manages all endpoints related to video operations, such as retrieving and updating video recommendations.
+### 2. `user_routes.py`
+- **Purpose**: Handles KnowGap extension user tokens.
 - **Key Endpoints**:
-  - `POST /update-all-videos` - Triggers an update of videos for all questions in the database.
-  - `POST /update-course-videos` - Updates videos specifically for a single course.
-  - `GET /get-course-videos` - Retrieves video recommendations for a specified course.
-  - `POST /get-video-rec` - Fetches video recommendations based on a student's course performance.
+  - `POST /add-token` - Adds or updates a user's encrypted Canvas token, linked course IDs, and Canvas link.
 
 ### 3. `course_routes.py`
-- **Purpose**: Handles endpoints for course-related operations, such as updating the course context and managing course data.
+- **Purpose**: Handles course-related operations for the KnowGap extension, such as course context, quiz syncing, grades, and the risk toggle.
 - **Key Endpoints**:
   - `POST /update-course-context` - Updates the context for a specific course and triggers video updates accordingly.
-  - `GET /course/<course_id>` - Retrieves details of a specific course by `course_id`.
-  - `POST /course` - Adds a new course to the database.
-  - `PUT /course/<course_id>` - Updates details of an existing course.
-  - `DELETE /course/<course_id>` - Deletes a specified course.
+  - `POST /update-course-db` - Updates the database with course quiz information and student data.
+  - `POST /sync-all-quizzes-questions` - Deep sync of all quizzes and questions for a course (instructor only, heavy operation).
+  - `POST /get-student-grade` - Fetches a student's grade for a course from Canvas.
+  - `POST /get-student-profile` - Fetches the Canvas user profile for the current user.
+  - `GET /get-toggle-risk/<course_id>` - Gets whether risk prediction is shown for a course.
+  - `POST /update-toggle-risk/<course_id>` - Updates the risk toggle for a course (requires a Canvas token for an instructor of that course).
 
-### 4. `user_token_management.py`
-- **Purpose**: Handles operations related to user tokens, including adding, updating, and retrieving tokens for secure access.
+### 4. `video_routes.py`
+- **Purpose**: Manages all endpoints related to KnowGap video recommendations, such as retrieving, editing, and voting on videos.
 - **Key Endpoints**:
-  - `POST /add-token` - Adds or updates a user token for authentication.
+  - `POST /get-assessment-videos` - Retrieves recommended videos for the quizzes a student has submissions for.
+  - `POST /get-course-videos` - Retrieves video recommendations for a specified course.
+  - `POST /update-video-link` - Replaces the video link for a question.
+  - `POST /add-video` - Adds a video to a question.
+  - `POST /remove-video` - Removes a video from a question.
+  - `POST /vote-video` - Records a student's upvote or downvote for a recommended video.
+  - `POST /get-video-votes` - Returns vote counts (and the student's own votes) for a list of questions.
+
+### 5. `support_routes.py`
+- **Purpose**: Provides support videos to students based on their risk level.
+- **Key Endpoints**:
+  - `POST /get-support-video` - Returns a random support video for a `low`, `medium`, or `high` risk level.
+
+### 6. `auth_routes.py` (`auth_bp`)
+- **Purpose**: Handles AchieveUp account authentication and profile management.
+- **Key Endpoints**:
+  - `POST /auth/signup` - Registers a user with email, password, and Canvas API token. Returns a JWT and user object.
+  - `POST /auth/login` - Logs in with email and password. Returns a JWT and user object.
+  - `GET /auth/me` - Returns the current user's information.
+  - `PUT /auth/profile` - Updates the user's profile, including their Canvas API token.
+  - `PUT /auth/password` - Changes the user's password.
+  - `POST /auth/validate-canvas-token` - Validates a Canvas API token with Canvas before it is stored.
+
+### 7. `canvas_routes.py` (`canvas_bp`)
+- **Purpose**: Retrieves Canvas courses, quizzes, and questions using the user's stored Canvas API token.
+- **Key Endpoints**:
+  - `GET /canvas/courses` - Gets the user's Canvas courses.
+  - `GET /canvas/courses/<course_id>/quizzes` - Gets quizzes for a course.
+  - `GET /canvas/quizzes/<quiz_id>/questions` - Gets questions for a quiz.
+  - `GET /canvas/test-connection` - Tests whether the stored Canvas API token is still valid.
+  - `GET /canvas/instructor/courses` - Gets all courses taught by the instructor.
+  - `GET /canvas/instructor/courses/<course_id>/quizzes` - Gets all quizzes in a course (instructor view).
+  - `GET /canvas/instructor/courses/<course_id>/quizzes/<quiz_id>/questions` - Gets all questions in a quiz (instructor view).
+
+### 8. `achieveup_routes.py` (`achieveup_bp`)
+- **Purpose**: Core AchieveUp functionality: skill matrices, skill assignment, AI suggestions, progress, badges, and instructor analytics.
+- **Key Endpoints**:
+  - Skill matrices:
+    - `POST /achieveup/matrix/create` - Creates a skill matrix for a course.
+    - `PUT /achieveup/matrix/<matrix_id>` - Updates a skill matrix.
+    - `GET /achieveup/matrix/course/<course_id>` - Gets all skill matrices for a course.
+    - `DELETE /achieveup/matrix/delete/<matrix_id>` - Deletes a skill matrix.
+    - `POST /achieveup/matrix/import` - Imports all skill matrices from a source course into a target course.
+  - Course descriptions:
+    - `GET /achieveup/course-description/<course_id>` - Gets the instructor's saved course description.
+    - `PUT /achieveup/course-description/<course_id>` - Saves the instructor's course description (used as AI context).
+  - Skill assignment:
+    - `POST /achieveup/skills/assign` - Assigns skills to quiz questions.
+    - `GET /achieveup/skills/assignments` - Gets the skills assigned to questions in a course.
+    - `POST /achieveup/skills/import` - Imports skill assignments from a source course into a target course.
+    - `GET /achieveup/import-status/<course_id>` - Gets whether matrices and assignments have been imported into a course.
+  - AI:
+    - `POST /achieveup/ai/suggest-skills` - Suggests skills for a course.
+    - `POST /achieveup/ai/analyze-questions` - Analyzes quiz questions and suggests skills for each.
+  - Progress:
+    - `GET /achieveup/progress/<student_id>/<course_id>` - Gets a student's skill progress in a course.
+  - Badges:
+    - `GET /achieveup/badges/student/<student_id>/earned` - Gets all badges a student has earned, with course information.
+    - `POST /achieveup/badges/share-profile` - Gets or creates a badge share link, for the caller or for a student an instructor teaches.
+    - `GET /achieveup/badges/share-status` - Gets the caller's current share link and opt-out preference.
+    - `POST /achieveup/badges/opt-out` - Turns off badge sharing for the caller.
+    - `POST /achieveup/badges/opt-in` - Turns badge sharing back on for the caller.
+    - `GET /achieveup/public/badges/share/<share_id>/earned` - Gets the badges on a public share link (no login required).
+  - Instructor:
+    - `GET /achieveup/instructor/dashboard` - Gets instructor dashboard data.
+    - `GET /achieveup/instructor/courses/<course_id>/student-analytics` - Gets per-student skill analytics for a course.
+    - `POST /achieveup/instructor/course/<course_id>/force-sync` - Forces a Canvas data and mastery sync for a course.
+
+### 9. `skill_video_routes.py` (`skill_video_bp`)
+- **Purpose**: Manages the curated list of videos for each skill in AchieveUp.
+- **Key Endpoints**:
+  - `POST /achieveup/skill-videos/get` - Gets the curated video list for a skill.
+  - `POST /achieveup/skill-videos` - Instructor adds a video to a skill.
+  - `PUT /achieveup/skill-videos/<video_id>` - Instructor edits a video, or accepts an AI-suggested candidate.
+  - `DELETE /achieveup/skill-videos/<video_id>` - Instructor removes a video.
+  - `POST /achieveup/skill-videos/suggest` - Instructor requests AI-suggested videos for a skill.
+  - `POST /achieveup/skill-videos/<video_id>/find-moment` - Instructor finds the transcript moment most relevant to a video.
+  - `POST /achieveup/skill-videos/<video_id>/verify` - Instructor marks an AI-suggested video as reviewed.
+  - `POST /achieveup/skill-videos/vote` - Student rates whether a video was helpful.
 
 ## Route Initialization
 
-Each route file contains an initialization function that registers its routes with the main `app` instance in `app.py`. This approach keeps route definitions modular, making it easy to maintain and expand the API.
+Each KnowGap route file contains an initialization function that registers its routes with the main `app` instance in `app.py`, and each AchieveUp route file exposes a Blueprint that `app.py` registers. This approach keeps route definitions modular, making it easy to maintain and expand the API.
 
 ### Example Initialization in `app.py`
 
 ```python
 from quart import Quart
-from quart_cors import cors
 from routes.base_routes import init_base_routes
 from routes.video_routes import init_video_routes
-from routes.course_routes import init_course_routes
-from routes.user_token_management import init_user_token_management_routes
+from routes.auth_routes import auth_bp
+from routes.achieveup_routes import achieveup_bp
 
 app = Quart(__name__)
-cors(app)
 
-# Registering Routes
+# Registering KnowGap routes
 init_base_routes(app)
 init_video_routes(app)
-init_course_routes(app)
-init_user_token_management_routes(app)
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# Registering AchieveUp blueprints
+app.register_blueprint(auth_bp)
+app.register_blueprint(achieveup_bp)
 ```
 ## Route Conventions
 
@@ -65,12 +144,12 @@ if __name__ == "__main__":
 Each route validates request data and returns a JSON error response if required fields are missing.
 
 ### Response Structure
-Standardized JSON responses with `status` and `message` fields are used to maintain consistency across endpoints.
+AchieveUp routes return errors as JSON with `error`, `message`, and `statusCode` fields, using the same HTTP status code as `statusCode`. KnowGap extension routes return JSON with `status`/`message` or `error` fields.
 
 ## Extending Routes
 
 To add new routes, create a new file in the `routes` directory and follow these steps:
 
 1. **Define the required endpoints and their corresponding handler functions.**
-2. **Create an initialization function (`init_<your_route_name>_routes`) to register the routes.**
-3. **Import and call this initialization function in `app.py` to activate the new routes.**
+2. **Either create an initialization function (`init_<your_route_name>_routes`) to register the routes, or define them on a `Blueprint`.**
+3. **Import and call this initialization function (or `app.register_blueprint(...)`) in `app.py` to activate the new routes.**
