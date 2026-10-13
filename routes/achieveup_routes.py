@@ -1117,10 +1117,6 @@ async def achieveup_ai_suggest_skills_route():
         token = auth_header.split(' ')[1]
         data = await request.get_json()
         
-        # ADD DETAILED LOGGING FOR DEBUGGING
-        logger.info(f"Skill Suggestions Request Received: {data}")
-        logger.info(f"Request Headers: {dict(request.headers)}")
-        
         if not data:
             logger.error("No request body received")
             return jsonify({
@@ -1214,10 +1210,6 @@ async def achieveup_ai_analyze_questions_route():
         
         token = auth_header.split(' ')[1]
         data = await request.get_json()
-        
-        # ADD DETAILED LOGGING FOR DEBUGGING
-        logger.info(f"AI Analysis Request Received: {data}")
-        logger.info(f"Request Headers: {dict(request.headers)}")
         
         if not data:
             logger.error("No request body received")
