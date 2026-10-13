@@ -159,8 +159,7 @@ async def suggest_candidate_videos_route():
 
         result = await generate_ai_video_recommendations(
             token, course_id, skill_name,
-            matrix_id=data.get('matrix_id'),
-            count=data.get('count', 5),
+            matrix_id=data.get('matrix_id')
         )
         return _result_response(result)
 
