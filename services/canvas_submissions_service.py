@@ -309,6 +309,7 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
     try:
         # Get all quizzes in the course
         from services.achieveup_canvas_service import get_instructor_course_quizzes
+        from services.mastery_service import update_student_mastery, mastery_collection
         quizzes_result = await get_instructor_course_quizzes(canvas_token, course_id)
         
         if 'error' in quizzes_result:
@@ -330,6 +331,7 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
 
         total_synced = 0
         total_errors = 0
+        mastery_cleared = False
         
         async with create_canvas_session() as session:
             # Sync submissions for each quiz
@@ -347,13 +349,11 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                 
                 submissions = submissions_result.get('submissions', [])
                 
-                # Process and store each submission
-                from services.mastery_service import update_student_mastery, mastery_collection
-                
                 # Clear previous mastery data for this course to prevent $inc duplication 
                 # upon every sync interval (since we aggregate across all time)
-                if quiz == quizzes[0]: # Only do this once per course sync
+                if not mastery_cleared: # Only do this once per course sync
                     await mastery_collection.delete_many({'course_id': str(course_id)})
+                    mastery_cleared = True
 
                 # Check if quiz is a new quiz. If it is, get the new quizzes data.
                 if submissions_result.get("is_new_quiz") and submissions:
