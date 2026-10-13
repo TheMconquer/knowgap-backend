@@ -705,23 +705,6 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
             if skill not in course_skills:
                 course_skills.append(skill)
         
-        # Determine if we should ever use demo data. Only use if absolutely no real assignments or mastery exist
-        use_demo_data = False
-        if Config.ENABLE_DEMO_MODE:
-            course_mastery_count = await mastery_collection.count_documents({'course_id': course_id})
-            course_assignment_count = await db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION].count_documents({'course_ids': course_id})
-            if course_mastery_count == 0 and course_assignment_count == 0:
-                use_demo_data = True
-        
-        # Fallback: Define skills for each course if not found in database (only if demo mode enabled)
-        if not course_skills and use_demo_data:
-            course_skills_map = {
-                "demo_001": ["HTML/CSS Fundamentals", "JavaScript Programming", "DOM Manipulation", "Responsive Design", "Web APIs"],
-                "demo_002": ["SQL Fundamentals", "Database Design", "Data Normalization", "Query Optimization", "Stored Procedures"],
-                "demo_003": ["Network Protocols (TCP/IP)", "Network Security", "Routing & Switching", "Wireless Networks", "Network Troubleshooting"]
-            }
-            course_skills = course_skills_map.get(course_id, [])
-        
         student_analytics = []
         skill_distribution = {}
         all_skill_scores = {}
@@ -743,7 +726,7 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
 
         # Debug info tracking
         real_data_count = 0
-        data_source = "demo" if use_demo_data else "real"
+        data_source = "real"
 
         for i, student in enumerate(students):
             student_id = student.get('id')
@@ -753,66 +736,6 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                 'student_id': student_id,
                 'course_id': course_id
             }).to_list(length=None)
-            
-            # If no real data and demo mode is on (and we are using demo data for the course), generate demo data
-            if not mastery_data and use_demo_data:
-                # Use student ID as seed for consistent random data
-                seed_value = hash(student_id) % (2**32)
-                rng = random.Random(seed_value)
-                
-                # Generate realistic skill scores (varied by student)
-                base_performance = 0.4 + (i * 0.02)  # Varied student ability
-                skill_breakdown = {}
-                skill_scores = {}
-                skills_mastered = 0
-                skills_with_badge = 0
-
-                for skill in course_skills:
-                    score = base_performance * 100 + rng.uniform(-20, 30)
-                    score = max(15, min(100, score))
-
-                    level = tier_for_score(score)
-                    if is_mastered(score):
-                        skills_mastered += 1
-                    # Real badges start at the beginner tier (25%+), not at
-                    # "mastered" (50%+) — see badge_service.tier_for_score.
-                    if level != 'none':
-                        skills_with_badge += 1
-
-                    questions_attempted = rng.randint(2, 8)
-                    questions_correct = max(0, int(questions_attempted * (score / 100) + rng.uniform(-1, 1)))
-                    questions_correct = min(questions_attempted, questions_correct)
-                    
-                    skill_breakdown[skill] = {
-                        "score": round(score, 1),
-                        "level": level,
-                        "questionsAttempted": questions_attempted,
-                        "questionsCorrect": questions_correct
-                    }
-                    skill_scores[skill] = score
-                    
-                    if skill not in skill_distribution:
-                        skill_distribution[skill] = 0
-                        all_skill_scores[skill] = []
-                    skill_distribution[skill] += 1
-                    all_skill_scores[skill].append(score)
-                
-                overall_progress = round(sum(skill_scores.values()) / len(skill_scores), 1) if skill_scores else 0
-              
-                badges_earned = skills_with_badge
-                
-                risk_level = 'low' if overall_progress >= 75 else 'medium' if overall_progress >= 50 else 'high'
-                
-                student_analytics.append({
-                    'id': student_id,
-                    'name': student.get('name', 'Unknown'),
-                    'progress': overall_progress,
-                    'skillsMastered': skills_mastered,
-                    'badgesEarned': badges_earned,
-                    'riskLevel': risk_level,
-                    'skillBreakdown': skill_breakdown
-                })
-                continue
             
             # Process real mastery data
             if mastery_data:
@@ -927,7 +850,6 @@ async def get_course_students_analytics(token: str, course_id: str, time_range: 
                     'dataSource': data_source,
                     'realRecordCount': real_data_count,
                     'realAssignmentCount': real_assignment_count,
-                    'demoModeEnabled': Config.ENABLE_DEMO_MODE,
                     'queryCourseId': course_id,
                     'serverTime': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
                 }

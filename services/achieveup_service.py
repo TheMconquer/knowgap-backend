@@ -1015,28 +1015,6 @@ async def analyze_questions_with_ai(token: str, questions: list, course_id: str,
                 matrix_used = matrix.get('matrix_name', 'default')
                 logger.info(f"Using first matrix '{matrix_used}' with {len(course_skills)} skills")
         
-        # Priority 3: Extract course_id from demo questions (only if demo mode is enabled)
-        if not course_skills and Config.ENABLE_DEMO_MODE:
-            logger.info("Attempting to detect course from question IDs (demo mode)")
-            for question in questions:
-                q_id = question.get('id', '')
-                if 'demo_001' in q_id:
-                    course_id = 'demo_001'
-                    break
-                elif 'demo_002' in q_id:
-                    course_id = 'demo_002'
-                    break
-                elif 'demo_003' in q_id:
-                    course_id = 'demo_003'
-                    break
-            
-            # Try again with detected course_id
-            if course_id:
-                matrix = await achieveup_skill_matrices_collection.find_one({'course_id': str(course_id)})
-                if matrix and 'skills' in matrix:
-                    course_skills = matrix['skills']
-                    matrix_used = matrix.get('matrix_name', 'demo')
-        
         # If still no skills found, return error
         if not course_skills:
             logger.error(f"No skill matrix found for course_id={course_id}, matrix_id={matrix_id}")
