@@ -303,7 +303,7 @@ async def achieveup_verify_token(token: str) -> dict:
             token_status = 'Valid'
         elif token_expiration <= now:
             token_status = 'Expired'
-        elif token_expiration <= now + timedelta(days=5):
+        elif token_expiration <= now + timedelta(days=7):
             token_status = 'Expiring Soon'
         else:
             token_status = 'Valid'
