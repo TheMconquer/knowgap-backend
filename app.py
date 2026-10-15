@@ -73,9 +73,7 @@ async def after_request(response):
 # Log incoming requests
 @app.before_request
 async def log_request():
-    print(f"Request headers: {dict(request.headers)}")
-    print(f"Request method: {request.method}")
-    print(f"Request path: {request.path}")
+    logger.info("%s %s", request.method, request.path)
 
 # Initialize routes first
 init_base_routes(app)
@@ -161,7 +159,7 @@ async def scheduled_update():
                     # Rate limit safeguard: pause between courses
                     await asyncio.sleep(1)
             else:
-                logger.warning("Missing data for token processing: %s", token)
+                logger.warning("Missing data for token processing.")
             
             # Rate limit safeguard: pause between legacy tokens
             await asyncio.sleep(2)
@@ -184,7 +182,7 @@ async def scheduled_update():
                 if isinstance(courses, list):
                     for course in courses:
                         course_id = str(course.get('id'))
-                        logger.info("Processing AchieveUp course ID: %s for user %s", course_id, user.get('email'))
+                        logger.info("Processing AchieveUp course ID: %s for user_id %s", course_id, user.get('user_id'))
                         
                         try:
                             # Sync data
@@ -201,7 +199,7 @@ async def scheduled_update():
                         # Rate limit safeguard: pause between courses
                         await asyncio.sleep(1)
             except Exception as user_error:
-                logger.error("Error processing user %s: %s", user.get('email'), user_error)
+                logger.error("Error processing user_id %s: %s", user.get('user_id'), user_error)
             
             # Rate limit safeguard: pause between teachers
             await asyncio.sleep(2)

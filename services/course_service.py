@@ -567,7 +567,6 @@ async def get_student_grade(course_id, user_id, access_token, canvas_domain):
     url = f"https://{canvas_domain}/api/v1/courses/{course_id}/enrollments?user_id={user_id}"
     headers = {'Authorization': f'Bearer {access_token}'}
     logger.info(f"Calling Canvas enrollments API: {url}")
-    logger.info(f"Headers: {headers}")
     try:
         async with create_canvas_session() as session:
             async with session.get(url, headers=headers) as response:
