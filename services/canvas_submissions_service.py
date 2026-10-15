@@ -15,7 +15,9 @@ from datetime import datetime, timezone
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
-from services.achieveup_canvas_service import create_canvas_session, CANVAS_API_URL, is_new_quiz
+from services.achieveup_canvas_service import (
+    create_canvas_session, CANVAS_API_URL, is_new_quiz, get_instructor_course_quizzes, get_course_name
+)
 from services.skill_tiers import tier_for_score
 from config import Config
 import csv
@@ -23,6 +25,7 @@ import io
 
 from mongodb import get_db
 from utils import text_utils
+from utils.course_utils import course_id_filter
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -31,6 +34,7 @@ logger = logging.getLogger(__name__)
 db = get_db()
 
 submissions_collection = db.get_collection('AchieveUp_Quiz_Submissions')
+achieveup_skill_matrices_collection = db[Config.ACHIEVEUP_SKILL_MATRICES_COLLECTION]
 
 async def check_rate_limit(response):
     """
@@ -525,14 +529,27 @@ async def sync_course_submissions(token: str, course_id: str) -> dict:
         logger.error(f"Sync course submissions error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> dict:
+async def sync_course_submissions_direct(canvas_token: str, course_id: str, course_name: str = None) -> dict:
     """
     Sync all submissions for a course using a raw Canvas token.
     Intended for background tasks (app.py) or internal calls.
+
+    course_name: the Canvas course name if the caller already has it; fetched otherwise.
     """
     try:
+        # Keep every matrix for this course on the current Canvas name (overwrites, so
+        # renames in Canvas propagate), and hand it to badges awarded during this sync.
+        if not course_name:
+            course_name = await get_course_name(canvas_token, course_id)
+        if course_name:
+            try:
+                await achieveup_skill_matrices_collection.update_many(
+                    course_id_filter(course_id), {'$set': {'course_name': course_name}}
+                )
+            except Exception as e:
+                logger.error(f"Error saving course name to matrices for course {course_id}: {str(e)}")
+
         # Get all quizzes in the course
-        from services.achieveup_canvas_service import get_instructor_course_quizzes
         quizzes_result = await get_instructor_course_quizzes(canvas_token, course_id)
         
         if 'error' in quizzes_result:
@@ -623,6 +640,7 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str) -> d
                         processed = await process_submission_data(sub)
                         if processed:
                             processed['course_id'] = str(course_id)
+                            processed['course_name'] = course_name
                             # Update mastery tracking
                             await update_student_mastery(processed)
                             # Store raw submission

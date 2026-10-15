@@ -193,7 +193,7 @@ async def scheduled_update():
                             await update_course_videos(course_id)
                             
                             # Update mastery
-                            await sync_course_submissions_direct(access_token, course_id)
+                            await sync_course_submissions_direct(access_token, course_id, course.get('name'))
                             
                         except Exception as course_error:
                             logger.error("Error processing course ID %s: %s", course_id, course_error)
