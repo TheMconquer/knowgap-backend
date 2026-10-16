@@ -95,7 +95,6 @@ COURSE_CODE_MAPPINGS = {
 - `AchieveUp_Skill_Matrices` - Course skill definitions
 - `AchieveUp_Question_Skills` - Question-skill mappings
 - `AchieveUp_Progress` - Student progress tracking
-- `AchieveUp_Analytics` - Analytics and reporting data
 
 ---
 
