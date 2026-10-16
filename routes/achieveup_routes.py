@@ -881,6 +881,9 @@ async def get_channels_endpoint(course_id):
 
         token = auth_header.split(' ')[1]
         channels = await get_course_channels(token, course_id)
+        if isinstance(channels, dict) and 'error' in channels:
+            return jsonify(channels), channels['statusCode']
+        
         return jsonify({
             "success": True,
             "course_id": str(course_id),
@@ -899,28 +902,13 @@ async def update_channels_endpoint(course_id):
     Expected JSON Body: { "channels": ["@3Blue1Brown", "@freecodecamp"] }
     """
     try:
-        # Get token from Authorization header and Check for Instructor Role
+        # Get token from Authorization header
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
-                return jsonify({'error': 'Missing token', 'message': 'Authorization header with Bearer token is required', 'statusCode': 401}), 401
-        token = auth_header.split(' ')[1]
-        from services.achieveup_auth_service import achieveup_verify_token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:                return jsonify({'error': user_result['error'], 'message': user_result['error'], 'statusCode': user_result['statusCode']}), user_result['statusCode']
-        user_id = user_result['user']['id']
-        from motor.motor_asyncio import AsyncIOMotorClient
-        from config import Config
-        client = AsyncIOMotorClient(
-            Config.DB_CONNECTION_STRING,
-            tlsAllowInvalidCertificates=(Config.ENV == 'development')
-        )
-        db = client[Config.DATABASE]
-        user_doc = await db[Config.ACHIEVEUP_USERS_COLLECTION].find_one({'user_id': user_id})
-        if not user_doc or user_doc.get('canvas_token_type', 'student') != 'instructor':
-            return jsonify({'error': 'Forbidden', 'message': 'Instructor token required', 'statusCode': 403}), 403
+            return jsonify({'error': 'Missing token', 'message': 'Authorization header with Bearer token is required', 'statusCode': 401}), 401
         token = auth_header.split(' ')[1]
         data = await request.get_json()
-        
+
         if not data or "channels" not in data:
             return jsonify({
                 "success": False,
@@ -934,10 +922,13 @@ async def update_channels_endpoint(course_id):
                 "error": "'channels' must be a list of channel handles or IDs."
             }), 400
 
-        success = await update_course_channels(token, course_id, channels_list)
-        
-        if success:
-            updated_channels = await get_course_channels(token, course_id)
+        result = await update_course_channels(token, course_id, channels_list)
+
+        if isinstance(result, dict) and 'error' in result:
+            return jsonify(result), result['statusCode']
+
+        if result:
+            updated_channels = result['channels']
             return jsonify({
                 "success": True,
                 "message": "Course channels updated successfully.",
@@ -953,7 +944,7 @@ async def update_channels_endpoint(course_id):
     except Exception as e:
         return jsonify({
             "success": False,
-            "error": "An unexpected error occurred in PUT.",
+            "error": "An unexpected error occurred in PUT."
         }), 500
 
 @achieveup_bp.route('/achieveup/instructor/courses/<course_id>/analytics', methods=['GET'])

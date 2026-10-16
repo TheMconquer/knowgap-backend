@@ -36,7 +36,7 @@ async def resolve_channel_id(youtube, channel_identifier: str) -> str | None:
     clean_id = channel_identifier.strip()
     
     # If it's already a UC... channel ID, return as is
-    if clean_id.startswith('UC'):
+    if clean_id.startswith('UC') and len(clean_id) == 24:
         return clean_id
     
     # Ensure handle format (e.g., '@AmoebaSisters')
@@ -60,7 +60,7 @@ async def resolve_channel_id(youtube, channel_identifier: str) -> str | None:
         return None
 
     except HttpError as e:
-        logging.error(f"HTTP Error resolving handle '{channel_identifier}': {e}")
+        logging.error(f"HTTP Error resolving handle '{channel_identifier}': {e.resp.status}")
         return None
     except Exception as e:
         logging.error(f"Error resolving channel handle '{channel_identifier}': {e}")
@@ -118,7 +118,7 @@ async def fetch_videos_for_topic_and_channel(topic: str, channel_handle: str, li
         return videos
 
     except HttpError as e:
-        logging.error(f"YouTube API HttpError for topic '{topic}' in channel '{channel_handle}': {e}")
+        logging.error(f"YouTube API HttpError for topic '{topic}' in channel '{channel_handle}': {e.resp.status}")
         return []
     except Exception as e:
         logging.error(f"Unexpected error fetching videos: {e}")

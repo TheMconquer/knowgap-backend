@@ -74,6 +74,8 @@ class Config:
     ENABLE_DEMO_MODE = os.getenv("ENABLE_DEMO_MODE", "true").lower() == "true"  # Default to true for backward compatibility
     ENABLE_SUBMISSION_CACHE = os.getenv("ENABLE_SUBMISSION_CACHE", "false").lower() == "true"  # Default to false to minimize storage
 
+    MAX_CHANNEL_SEARCHES: int = 3
+
     @classmethod
     def check_config(cls):
         """Method to ensure all necessary config variables are set."""

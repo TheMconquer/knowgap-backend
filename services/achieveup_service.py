@@ -10,6 +10,7 @@ import re
 from html import unescape
 
 from mongodb import get_db
+from utils.youtube_utils import get_youtube_client, resolve_channel_id
 
 def normalize_quiz_title(title: str) -> str:
     if not title:
@@ -46,6 +47,7 @@ achieveup_import_status_collection = db[Config.ACHIEVEUP_IMPORT_STATUS_COLLECTIO
 achieveup_course_channels_collection = db[Config.ACHIEVEUP_COURSE_CHANNELS_COLLECTION]
 
 MAX_COURSE_DESCRIPTION_LENGTH = 12000
+MAX_COURSE_CHANNELS = 3
 
 async def create_skill_matrix(token: str, course_id: str, matrix_name: str, skills: list) -> dict:
     """Create skill matrix for a course."""
@@ -2009,20 +2011,32 @@ async def get_import_status(token: str, course_id: str) -> dict:
     
 
 # Adding functions to manage YouTube channels for courses
-async def get_course_channels(token: str, course_id: str) -> list:
+async def get_course_channels(token: str, course_id: str) -> list | dict:
     """
     Fetch configured YouTube channels for a given course ID.
     Returns a list of channel handles/IDs or an empty list if none found.
     """
     # Verify user token
     try:
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
+        # Verify the user is an instructor.
+        from services.skill_video_service import _require_instructor
+        user, error = await _require_instructor(token)
+        
+        if error:
+            return error
+        
+        from services.achieveup_auth_service import get_user_canvas_token
+        from services.achieveup_canvas_service import validate_canvas_instructor_for_course
+        course_check = await validate_canvas_instructor_for_course(await get_user_canvas_token(user['id']), str(course_id))
+        if not course_check.get('valid'):
+            return {'error': 'Access denied', 'message': course_check.get('message'), 'statusCode': 403}
+        
+        user_id = user['id']
 
         # Checks the course settings/metadata document
-        course_doc = await achieveup_course_channels_collection.find_one({"course_id": str(course_id)})
-        
+        course_doc = await achieveup_course_channels_collection.find_one(
+            {"course_id": str(course_id), "instructor_id": user_id})
+
         if course_doc and "youtube_channels" in course_doc:
             return course_doc["youtube_channels"]
             
@@ -2031,35 +2045,55 @@ async def get_course_channels(token: str, course_id: str) -> list:
         logger.error(f"Error fetching channels for course {course_id}: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def update_course_channels(token: str, course_id: str, channels: list) -> bool:
+async def update_course_channels(token: str, course_id: str, channels: list):
     """
     Update or insert configured YouTube channels for a given course ID.
     """
     try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return False
+        # Verify the user is an instructor.
+        from services.skill_video_service import _require_instructor
+        user, error = await _require_instructor(token)
         
+        if error:
+            return error
+        
+        from services.achieveup_auth_service import get_user_canvas_token
+        from services.achieveup_canvas_service import validate_canvas_instructor_for_course
+        course_check = await validate_canvas_instructor_for_course(await get_user_canvas_token(user['id']), str(course_id))
+        if not course_check.get('valid'):
+            return {'error': 'Access denied', 'message': course_check.get('message'), 'statusCode': 403}
+        
+        user_id = user['id']
+
         # Clean and sanitize input (remove duplicates & whitespace)
         clean_channels = list(dict.fromkeys([
             c.strip() for c in channels if isinstance(c, str) and c.strip()
         ]))
-        
+
+        # Check that each channel exists.
+        if len(clean_channels) > MAX_COURSE_CHANNELS:
+            return {'error': 'Too many channels', 'message': f'Link up to {MAX_COURSE_CHANNELS} channels', 'statusCode': 400}
+        youtube = get_youtube_client()
+        not_found = [c for c in clean_channels if not await resolve_channel_id(youtube, c)]
+        if not_found:
+            return {'error': 'Channel not found', 'message': f"Couldn't find these YouTube channels: {', '.join(not_found)}", 'statusCode': 400}
+
         # Perform the async update on the Motor collection
         result = await achieveup_course_channels_collection.update_one(
-            {"course_id": str(course_id)},
+            {"course_id": str(course_id),
+             "instructor_id": user_id},
             {"$set": {
                 "course_id": str(course_id),
-                "youtube_channels": clean_channels
+                "youtube_channels": clean_channels,
+                "instructor_id": user_id
             }},
             upsert=True
         )
-        
+
         if result.acknowledged:
             logger.info(f"Successfully saved channels for course {course_id}: {clean_channels}")
-            return True
-            
+            return {'channels': clean_channels}
+
         logger.warning(f"MongoDB operation was not acknowledged for course {course_id}")
         return False
 
