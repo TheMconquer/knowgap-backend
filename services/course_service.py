@@ -1,9 +1,5 @@
-from motor.motor_asyncio import AsyncIOMotorClient
 from utils.course_utils import get_quiz_questions, get_course_name, clean_text, get_quizzes
 from config import Config
-from utils.course_utils import (
-    get_course_name, clean_text, get_quizzes
-)
 import aiohttp
 from bs4 import BeautifulSoup
 import logging
@@ -109,44 +105,7 @@ async def get_course_risk_toggle(course_id):
     except Exception as e:
         logger.error("Error getting risk toggle: %s", e)
         return {'status': 'Error', 'message': str(e)}
- 
 
-async def get_incorrect_question_data(courseid, currentquiz, access_token, link):
-    """Fetches incorrect answer data for a specific quiz."""
-    api_url = f'https://{link}/api/v1/courses/{courseid}/quizzes/{currentquiz}/questions'
-    headers = {'Authorization': f'Bearer {access_token}'}
-    
-    try:
-        async with create_canvas_session() as session:
-            async with session.get(api_url, headers=headers) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error("Failed to fetch quiz statistics: Status %s, Response: %s", response.status, error_text)
-                    return {'error': f'Failed to fetch data from API: {error_text}'}, response.status
-                
-                # Attempt to parse JSON response
-                try:
-                    data = await response.json()
-                except Exception as e:
-                    logger.error("Failed to parse JSON from API response: %s", e)
-                    return {'error': f'Failed to parse JSON: {str(e)}'}, 500
-                
-                question_data = data
-                question_texts, question_ids = [], []
-                
-                # Process each question in the statistics
-                for question in question_data:
-                    if "question_text" in question and "id" in question:
-                        cleaned_text = BeautifulSoup(question["question_text"], "html.parser").get_text()
-                        question_texts.append(clean_text(cleaned_text))
-                        question_ids.append(question["id"])
-                    else:
-                        logger.warning("Question data missing required fields: %s", question)
-                
-                return [question_texts, question_ids]
-    except Exception as e:
-        logger.error("Error fetching incorrect question data: %s", e)
-        return {'error': f'Exception occurred: {str(e)}'}, 500
 
 async def sync_all_quizzes_questions(course_id, access_token, link):
     """Sync all quizzes and questions for a course into the database (instructor-only, heavy operation)."""
@@ -546,19 +505,6 @@ async def update_quiz_reccs(course_id, quiz_id, access_token, link):
         # logger.error(f"Failed to grab quiz statistics for quiz {quiz_id}: {str(e)}")
         return {'error': f'Failed to grab quiz statistics: {str(e)}'}
 
-async def get_questions_by_course(course_id):
-    """Retrieve all questions for a specific course."""
-    results = await quizzes_collection.find({"courseid": course_id}).to_list(length=None)
-    all_questions = []
-
-    for result in results:
-        result["_id"] = str(result["_id"])  # Convert ObjectId to string for JSON serialization
-        all_questions.append(result)
-
-    if not all_questions:
-        return {"error": "No questions found for the given course ID"}
-
-    return {"course_id": course_id, "questions": all_questions}
 
 async def get_student_grade(course_id, user_id, access_token, canvas_domain):
     """Fetches a student's current and final grade for a course from Canvas."""

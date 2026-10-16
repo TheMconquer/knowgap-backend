@@ -1,10 +1,7 @@
 from quart import request, jsonify
-from services.achieveup_auth_service import achieveup_verify_token,achieveup_users_collection
 from services.achieveup_canvas_service import validate_canvas_instructor_for_course
-from services.course_service import update_context,update_course_risk_toggle, get_course_risk_toggle, update_student_quiz_data, get_incorrect_question_data, get_questions_by_course, update_quiz_reccs, update_quiz_questions_per_course, get_student_grade, get_student_profile, sync_all_quizzes_questions
+from services.course_service import update_context,update_course_risk_toggle, get_course_risk_toggle, update_student_quiz_data, get_student_grade, get_student_profile, sync_all_quizzes_questions
 from services.video_service import update_course_videos
-from utils.course_utils import get_quizzes
-from quart_cors import cors
 
 def init_course_routes(app):
     @app.route('/update-course-context', methods=['POST'])
@@ -90,62 +87,6 @@ def init_course_routes(app):
         '''
         return jsonify({'status': 'Success', 'message': 'Course database updated successfully'}), 200
 
-    @app.route('/get-course-quizzes', methods=['POST'])
-    async def get_course_quizzes_route():
-        """Route to fetch quizzes for a course."""
-        data = await request.get_json()
-        course_id = data.get('course_id')
-        link = data.get('link')
-        access_token = data.get('access_token')
-
-        # Log the request data for debugging
-        print(f"Received data for fetching course quizzes: {data}")
-
-        if not course_id or not link or not access_token:
-            return jsonify({'error': 'Missing course_id or link'}), 400
-
-        try:
-            quiz_list, quiz_names = await get_quizzes(course_id, access_token, link)
-            return jsonify({'status': 'Success', 'quizzes': quiz_names}), 200
-        except Exception as e:
-            print(f"Error fetching quizzes: {e}")
-            return jsonify({'status': 'Error', 'message': str(e)}), 500
-
-    @app.route('/get-incorrect-questions', methods=['POST'])
-    async def get_incorrect_questions_route():
-        """Route to fetch incorrect question data for a specific quiz."""
-        data = await request.get_json()
-        course_id = data.get('course_id')
-        quiz_id = data.get('quiz_id')
-        link = data.get('link')
-
-        print(f"Received data for fetching incorrect questions: {data}")
-
-        if not course_id or not quiz_id or not link:
-            return jsonify({'error': 'Missing course_id, quiz_id, or link'}), 400
-
-        try:
-            question_data = await get_incorrect_question_data(course_id, quiz_id, link)
-            return jsonify({'status': 'Success', 'data': question_data}), 200
-        except Exception as e:
-            print(f"Error fetching incorrect questions: {e}")
-            return jsonify({'status': 'Error', 'message': str(e)}), 500
-
-
-    @app.route('/get-questions-by-course/<course_id>', methods=['POST'])
-    async def get_questions_by_course_route(course_id):
-        """Route to fetch questions for a specific course."""
-        try:
-            question_data = await get_questions_by_course(course_id)
-            
-            if "error" in question_data:
-                return jsonify(question_data), 404
-
-            return jsonify({"status": "Success", "data": question_data}), 200
-        except Exception as e:
-            print(f"Error fetching questions for course {course_id}: {e}")
-            return jsonify({"status": "Error", "message": str(e)}), 500
-
     @app.route('/get-student-grade', methods=['POST'])
     async def get_student_grade_route():
         """Route to fetch a student's grade for a course."""
@@ -191,7 +132,6 @@ def init_course_routes(app):
                     'message': 'Authorization header with Bearer token is required',
                     'statusCode': 401
                 }), 401
-            from services.achieveup_canvas_service import validate_canvas_token
             canvas_api_token = auth_header.split(' ')[1]
             
             if not canvas_api_token:

@@ -4,16 +4,10 @@ import aiohttp
 import ssl
 import logging
 import re
-from datetime import datetime, timezone
-from motor.motor_asyncio import AsyncIOMotorClient
 from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
-from services.achieveup_canvas_demo_service import (
-    is_demo_token, get_demo_instructor_courses, get_demo_course_details,
-    get_demo_course_quizzes, get_demo_quiz_questions, get_demo_course_students,
-    validate_demo_canvas_token
-)
 from config import Config
 from utils import text_utils
+from datetime import datetime
 
 from mongodb import get_db
 
@@ -102,9 +96,6 @@ async def _fetch_all_canvas_pages(session, url: str, headers: dict, params: dict
 # Only bypass SSL verification in development
 db = get_db()
 
-achieveup_canvas_courses_collection = db[Config.ACHIEVEUP_CANVAS_COURSES_COLLECTION]
-achieveup_canvas_quizzes_collection = db[Config.ACHIEVEUP_CANVAS_QUIZZES_COLLECTION]
-achieveup_canvas_questions_collection = db[Config.ACHIEVEUP_CANVAS_QUESTIONS_COLLECTION]
 
 # Canvas API configuration
 CANVAS_API_URL = getattr(Config, 'CANVAS_API_URL', 'https://webcourses.ucf.edu/api/v1')
@@ -113,10 +104,6 @@ CANVAS_GRAPHQL_API_URL = getattr(Config, "CANVAS_GRAPHQL_API_URL")
 async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'student') -> dict:
     """Validate Canvas API token by testing it with Canvas API. Supports student and instructor tokens."""
     try:
-        # Check if this is a demo token (only if demo mode is enabled)
-        if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
-            return await validate_demo_canvas_token(canvas_token, canvas_token_type)
-        
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -193,10 +180,6 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
 async def validate_canvas_instructor_for_course(canvas_token: str, course_id: str) -> dict:
     """Validate Instructor of a specific course"""
     try:
-        # Check if this is a demo token (only if demo mode is enabled)
-        if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
-            return await validate_demo_canvas_token(canvas_token, 'instructor')
-        
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -505,78 +488,10 @@ async def get_canvas_quiz_questions(token: str, quiz_id: str) -> dict:
         logger.error(f"Get Canvas questions error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def cache_canvas_data(course_id: str, data_type: str, data: list) -> None:
-    """Cache Canvas data for AchieveUp (optional performance optimization)."""
-    try:
-        cache_data = {
-            'course_id': course_id,
-            'data_type': data_type,
-            'data': data,
-            'cached_at': datetime.now(timezone.utc).replace(tzinfo=None)
-        }
-        
-        if data_type == 'courses':
-            await achieveup_canvas_courses_collection.update_one(
-                {'course_id': course_id},
-                {'$set': cache_data},
-                upsert=True
-            )
-        elif data_type == 'quizzes':
-            await achieveup_canvas_quizzes_collection.update_one(
-                {'course_id': course_id},
-                {'$set': cache_data},
-                upsert=True
-            )
-        elif data_type == 'questions':
-            await achieveup_canvas_questions_collection.update_one(
-                {'quiz_id': course_id},  # course_id is actually quiz_id here
-                {'$set': cache_data},
-                upsert=True
-            )
-            
-    except Exception as e:
-        logger.error(f"Cache Canvas data error: {str(e)}")
-
-async def get_cached_canvas_data(course_id: str, data_type: str) -> dict:
-    """Get cached Canvas data for AchieveUp (optional performance optimization)."""
-    try:
-        if data_type == 'courses':
-            cached = await achieveup_canvas_courses_collection.find_one({'course_id': course_id})
-        elif data_type == 'quizzes':
-            cached = await achieveup_canvas_quizzes_collection.find_one({'course_id': course_id})
-        elif data_type == 'questions':
-            cached = await achieveup_canvas_questions_collection.find_one({'quiz_id': course_id})
-        else:
-            return None
-            
-        if cached:
-            # Check if cache is still valid (e.g., less than 1 hour old)
-            cache_age = datetime.now(timezone.utc).replace(tzinfo=None) - cached['cached_at']
-            if cache_age.total_seconds() < 3600:  # 1 hour
-                return cached['data']
-                
-        return None
-        
-    except Exception as e:
-        logger.error(f"Get cached Canvas data error: {str(e)}")
-        return None
 
 async def get_instructor_courses(canvas_token: str) -> dict:
     """Get all courses taught by the instructor using their Canvas token."""
     try:
-        # Check if this is a demo token
-        if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
-            demo_courses = await get_demo_instructor_courses()
-            # Transform demo courses to match expected format
-            courses = []
-            for course in demo_courses:
-                courses.append({
-                    'id': str(course.get('id')),
-                    'name': course.get('name', ''),
-                    'code': course.get('course_code', '')  # Map course_code to code field
-                })
-            return courses
-        
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -605,11 +520,6 @@ async def get_instructor_courses(canvas_token: str) -> dict:
 async def get_instructor_course_quizzes(canvas_token: str, course_id: str) -> dict:
     """Get all quizzes in a course for instructor."""
     try:
-        # Check if this is a demo token
-        from services.achieveup_canvas_demo_service import is_demo_token, get_demo_course_quizzes
-        if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
-            return await get_demo_course_quizzes(course_id)
-        
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -664,11 +574,6 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
 
         #for deubuggin
         logger.info(f"Getting questions for quiz_id = {quiz_id}, course_id={course_id}")
-        # Check if this is a demo token
-        from services.achieveup_canvas_demo_service import is_demo_token, get_demo_quiz_questions
-        if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
-            return await get_demo_quiz_questions(quiz_id)
-        
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -757,10 +662,6 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
 async def get_course_students(canvas_token: str, course_id: str) -> dict:
     """Get students enrolled in a course."""
     try:
-        # Check if this is a demo token
-        if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
-            return await get_demo_course_students(course_id)
-        
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -841,68 +742,6 @@ async def get_course_detailed_info(canvas_token: str, course_id: str) -> dict:
         logger.error(f"Get course detailed info error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def get_quiz_detailed_questions(canvas_token: str, course_id: str, quiz_id: str) -> dict:
-    """Get detailed questions for a quiz including all metadata."""
-    try:
-        headers = {
-            'Authorization': f'Bearer {canvas_token}',
-            'Content-Type': 'application/json'
-        }
-        
-        url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/questions"
-        params = {'per_page': 100}
-        
-        async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
-                if response.status == 200:
-                    questions_data = await response.json()
-                    
-                    questions = []
-                    for question in questions_data:
-                        question_obj = {
-                            'id': str(question.get('id')),
-                            'question_text': clean_html(question.get('question_text', '')),
-                            'question_type': question.get('question_type', ''),
-                            'points_possible': question.get('points_possible', 1),
-                            'correct_comments': question.get('correct_comments', ''),
-                            'incorrect_comments': question.get('incorrect_comments', ''),
-                            'neutral_comments': question.get('neutral_comments', ''),
-                            'quiz_id': str(quiz_id),
-                            'position': question.get('position', 0),
-                            'answers': question.get('answers', [])
-                        }
-                        questions.append(question_obj)
-                    
-                    return questions
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Canvas quiz questions error: {response.status} - {error_text}")
-                    return {
-                        'error': f'Failed to fetch quiz questions: {response.status}',
-                        'statusCode': response.status
-                    }
-                    
-    except Exception as e:
-        logger.error(f"Get quiz detailed questions error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
-def clean_html(text: str) -> str:
-    """Remove HTML tags from text while preserving content."""
-    import re
-    if not text:
-        return ''
-    
-    # Remove HTML tags
-    clean_text = re.sub(r'<[^>]+>', '', text)
-    
-    # Clean up whitespace
-    clean_text = ' '.join(clean_text.split())
-    
-    # Decode HTML entities
-    import html
-    clean_text = html.unescape(clean_text)
-    
-    return clean_text 
 
 async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bool | None:
     """Checks whether a quiz in a class is a new quiz or a classic quiz."""

@@ -4,6 +4,8 @@
 
 **KnowGap** is an intelligent platform designed to enhance student learning and course management. It combines student performance prediction with personalized video recommendations to improve understanding of incorrectly answered quiz questions. The platform integrates with learning management systems like Canvas to monitor student progress and provide instructors with critical insights, while helping students close knowledge gaps through targeted video recommendations.
 
+This backend also powers **AchieveUp**, the companion web app where instructors build skill matrices for their Canvas courses and map quiz questions to skills, and students track their skill mastery and earn badges.
+
 ## Features
 
 1. **Student Risk Prediction**
@@ -16,15 +18,31 @@
    - Stores new video data in the system, ensuring future reuse without redundant lookups.
 
 3. **Integration with Canvas**
-   - Uses course and quiz data from Canvas to monitor student performance.
+   - Uses course and quiz data from Canvas (both Classic Quizzes and New Quizzes) to monitor student performance.
    - Tracks quiz results and triggers video recommendations based on incorrect answers.
+   - Runs a background sync on startup and every 10 minutes (`Config.SET_TIMER`) that pulls quiz data, refreshes videos, and updates student skill mastery for every connected course.
 
 4. **Caching and Storing Results**
    - Caches dynamically generated core topics and videos, reducing the need for repeated API calls or queries.
 
+5. **Skill Matrices and Skill Assignment (AchieveUp)**
+   - Instructors create one or more skill matrices per course, with AI-suggested skills based on the course description.
+   - Quiz questions are mapped to skills manually or with AI-assisted analysis, and matrices and assignments can be imported from another course.
+
+6. **Skill Mastery and Badges (AchieveUp)**
+   - Student mastery per skill is calculated from Canvas quiz submissions and awarded as tiered badges.
+   - Students can share their earned badges through a public share link, or opt out of sharing.
+
+7. **Skill Video Curation (AchieveUp)**
+   - Instructors curate YouTube videos per skill, add AI-suggested videos, and can jump to the most relevant moment of a video using its transcript.
+   - Students vote on whether a video was helpful.
+
+8. **Instructor Analytics (AchieveUp)**
+   - Course dashboard and per-student skill breakdowns, risk levels, and earned badges for each course an instructor teaches.
+
 ## Tech Stack
  
-The backend is a Python application built on the **Quart** framework (an async-capable counterpart to Flask), served in production via **Hypercorn**. Data is stored in **MongoDB**. Configuration is managed through environment variables loaded via `python-dotenv`. The companion frontend is a **React/TypeScript** single-page application. The two services communicate over HTTP, with the frontend calling the backend's REST API.
+The backend is a Python application built on the **Quart** framework (an async-capable counterpart to Flask), served in production via **Hypercorn**. Data is stored in **MongoDB**. Configuration is managed through environment variables loaded via `python-dotenv`. The companion frontend is a **React/TypeScript** single-page application, and the KnowGap **Chrome extension** runs inside Canvas. Both communicate with the backend over HTTP by calling its REST API.
  
 ## Local Setup (Without Docker)
  
@@ -45,7 +63,7 @@ pip install -r requirements.txt
  
 On Windows, if `venv\Scripts\activate` fails in PowerShell with a "running scripts is disabled" error, this is PowerShell's default execution policy, not an issue with the project. Either run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that terminal session before activating, or activate via Command Prompt instead using `venv\Scripts\activate.bat`.
  
-Once the environment is set up, copy `.env.example` to `.env` and fill in real values — a full MongoDB connection string (`DB_CONNECTION_STRING`), an encryption key matching the rest of the team's if you're working against shared data, and any other required variables. Running the backend outside Docker means it will need a MongoDB instance it can actually reach — either a local install or a shared Atlas cluster.
+Once the environment is set up, copy `demo.env` to `.env` and fill in real values — a full MongoDB connection string (`DB_CONNECTION_STRING`), an encryption key matching the rest of the team's if you're working against shared data, and any other required variables. The backend will refuse to start unless `DB_CONNECTION_STRING`, `HEX_ENCRYPTION_KEY`, `OPENAI_KEY`, and `YOUTUBE_API_KEY` are all set. Running the backend outside Docker means it will need a MongoDB instance it can actually reach — either a local install or a shared Atlas cluster.
  
 ## Running with Docker
  
@@ -101,13 +119,19 @@ This stops and removes the containers but preserves MongoDB data in the named `m
 The backend is organized into modular subdirectories to keep the codebase maintainable and scalable.
 
 ### 1. `routes/`
-Defines the API endpoints, organized by feature area: `base_routes.py`, `auth_routes.py`, `user_routes.py`, `course_routes.py`, `video_routes.py`, `canvas_routes.py`, `progress_routes.py`, `badge_routes.py`, `analytics_routes.py`, `instructor_routes.py`, `support_routes.py`, `achieveup_routes.py`, and `course_utils.py`. Each route file registers its endpoints with the main app instance.
+Defines the API endpoints, organized by feature area: `base_routes.py`, `auth_routes.py`, `user_routes.py`, `course_routes.py`, `video_routes.py`, `support_routes.py`, `canvas_routes.py`, `achieveup_routes.py`, and `skill_video_routes.py`. Each route file registers its endpoints with the main app instance in `app.py`. See `routes/README.md` for the full list of endpoints.
 
 ### 2. `services/`
-Contains the core business logic and database interactions, separated from the routing layer. Key files include `video_service.py`, `course_service.py`, `user_service.py`, `progress_service.py`, `badge_service.py`, `analytics_service.py`, `mastery_service.py`, `support_service.py`, and several `achieveup_*_service.py` files handling AI, auth, and Canvas-specific logic.
+Contains the core business logic and database interactions, separated from the routing layer. Key files include `video_service.py`, `course_service.py`, `user_service.py`, `support_service.py`, `badge_service.py`, `analytics_service.py`, `mastery_service.py`, `skill_video_service.py`, `canvas_submissions_service.py`, `skill_tiers.py`, and several `achieveup_*_service.py` files handling AI, auth, and Canvas-specific logic. See `services/README.md` for details.
 
 ### 3. `utils/`
-Shared helper functions: `encryption_utils.py` (token encryption/decryption), `youtube_utils.py` (YouTube API helpers), `ai_utils.py` (AI-generated core topics), `course_utils.py`, and `db_utils.py`.
+Shared helper functions: `encryption_utils.py` (token encryption/decryption), `youtube_utils.py` (YouTube API helpers), `ai_utils.py` (AI-generated core topics and video search phrases), `course_utils.py` (Canvas course and quiz fetching), and `text_utils.py` (question text normalization and hashing).
+
+### 4. `tests/`
+Automated tests, written with `unittest`. Run them with `python -m unittest discover tests` from the backend folder (the same `.env` variables are required).
+
+### Root files
+`app.py` creates the Quart app, registers all routes, creates MongoDB indexes, and starts the background sync. `config.py` holds configuration and collection names, and `mongodb.py` provides the shared MongoDB client used by every service.
 
 Current Student View          |  Current Instructor View
 :-------------------------:|:-------------------------:
