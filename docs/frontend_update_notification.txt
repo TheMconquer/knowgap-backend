@@ -35,7 +35,6 @@ WHAT'S NEW:
 1. PUT /auth/profile - Now includes Canvas token validation
 2. POST /auth/signup - Now validates Canvas tokens during registration
 3. POST /auth/login - Now returns hasCanvasToken field
-4. GET /auth/verify - Now returns hasCanvasToken field
 
 ✅ SECURITY FEATURES:
 
