@@ -96,7 +96,7 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
         # try instructor first; a real teaching-enrolled token should grant
         # instructor access automatically, no hint needed. Fall back to
         # confirming it's at least a valid student token; reject otherwise.
-        from services.achieveup_canvas_service import validate_canvas_token
+        from services.achieveup_canvas_service import validate_canvas_token, get_token_expiration
 
         instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
         if instructor_check['valid']:
@@ -140,6 +140,11 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
         user_doc['canvas_api_token'] = encrypted_token
         user_doc['canvas_token_created_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
         user_doc['canvas_token_last_validated'] = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Get the expiration date for the token.
+        expiration_status, expiration_date = await get_token_expiration(canvas_api_token)
+        if expiration_status == 200:
+            user_doc["canvas_token_expiration"] = expiration_date
 
         # Insert user into database. A DuplicateKeyError here means another
         # request won the race between the find_one check above and this
@@ -254,6 +259,18 @@ async def achieveup_verify_token(token: str) -> dict:
                 'statusCode': 404
             }
         
+        token_expiration = user.get("canvas_token_expiration")
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        if token_expiration is None:
+            token_status = 'Valid'
+        elif token_expiration <= now:
+            token_status = 'Expired'
+        elif token_expiration <= now + timedelta(days=7):
+            token_status = 'Expiring Soon'
+        else:
+            token_status = 'Valid'
+
         # Return user info (without password and Canvas token)
         user_info = {
             'id': user['user_id'],
@@ -263,7 +280,9 @@ async def achieveup_verify_token(token: str) -> dict:
             'hasCanvasToken': bool(user.get('canvas_api_token')),
             'canvasTokenType': user.get('canvas_token_type', 'student'),
             'canvas_student_id': user.get('canvas_student_id'),
-            'has_student_access': user.get('has_student_access', False)
+            'has_student_access': user.get('has_student_access', False),
+            "canvasTokenExpiresAt": token_expiration.isoformat() if token_expiration else None,
+            "canvasTokenStatus": token_status
         }
 
         return {'user': user_info}
@@ -326,7 +345,7 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             # same instructor-first-then-student-fallback pattern as signup, so a
             # student can't hand-craft a request claiming canvasTokenType=instructor
             # to get promoted on a token that was never actually verified as one.
-            from services.achieveup_canvas_service import validate_canvas_token
+            from services.achieveup_canvas_service import validate_canvas_token, get_token_expiration
 
             instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
             if instructor_check['valid']:
@@ -356,6 +375,12 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             update_data['role'] = token_type
             update_data['canvas_student_id'] = validated_check.get('user_info', {}).get('id')
             update_data['has_student_access'] = has_student_access
+
+            expiration_status, expiration_date = await get_token_expiration(canvas_api_token)
+            if expiration_status == 200:
+                update_data["canvas_token_expiration"] = expiration_date
+            else:
+                await achieveup_users_collection.update_one({'user_id': user_id}, {'$unset': {'canvas_token_expiration': ''}})
 
 
         # Update user in database

@@ -808,3 +808,47 @@ async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bo
                 else:
                     logger.error(f"Canvas' GraphQL API call returned an error.")
                     return
+
+async def get_token_expiration(canvas_api_token: str) -> tuple[int, datetime | None]:
+    """
+    Checks whether a Canvas token has an expiration date, and if so returns the expiration date.
+    HTTP status codes are used to convey whether the token is valid or not. If the returned status
+    is 200 paired with a None value, the token has no expiration date set.
+    """
+
+    headers = {
+            'Authorization': f'Bearer {canvas_api_token}',
+            'Content-Type': 'application/json'
+            }
+
+    url = f"{CANVAS_API_URL}/users/self/tokens/{canvas_api_token[:10]}"
+
+    try:
+        async with create_canvas_session() as session:
+            async with session.get(url, headers=headers) as res:
+                
+                # If statements to check the API status code
+                # and return the correct HTTP code.
+                if res.status in (401, 404):
+                    return 401, None
+                elif res.status != 200:
+                    error_text = await res.text()
+                    logger.error(f"Canvas API validation error: {res.status} - {error_text}")
+                    return res.status, None
+                
+                token_information = await res.json()
+
+                # Get token expiration data.
+                expiration_information: str | None = token_information.get("expires_at")
+                expiration_date: datetime | None = (
+                                datetime.fromisoformat(expiration_information.replace("Z", "+00:00"))
+                                .astimezone(timezone.utc)
+                                .replace(tzinfo=None)
+                                if expiration_information else None
+                            )
+                
+                return 200, expiration_date
+
+    except Exception as err:
+        logger.error(f"Error checking token information: {str(err)}")
+        return 500, None
