@@ -4,7 +4,7 @@
 
 The `routes` directory contains all route definitions for the KnowGap Backend API. Each route file is organized by functionality to handle different aspects of the application, such as authentication, Canvas data, skill matrices, badges, and videos. Routes are registered with the main application instance in `app.py` in one of two ways:
 
-- **KnowGap extension routes** use a dedicated initialization function (`init_<route_name>_routes`) that registers the routes directly on the app.
+- **`base_routes.py`** uses an initialization function (`init_base_routes`) that registers its routes directly on the app.
 - **AchieveUp routes** are defined on a Quart `Blueprint` (e.g. `auth_bp`) that is registered with `app.register_blueprint(...)`.
 
 Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <JWT>` header obtained from `/auth/login` or `/auth/signup`.
@@ -16,39 +16,7 @@ Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <J
 - **Main Endpoint**:
   - `GET /` - Returns a welcome message to indicate that the API is active.
 
-### 2. `user_routes.py`
-- **Purpose**: Handles KnowGap extension user tokens.
-- **Key Endpoints**:
-  - `POST /add-token` - Adds or updates a user's encrypted Canvas token, linked course IDs, and Canvas link.
-
-### 3. `course_routes.py`
-- **Purpose**: Handles course-related operations for the KnowGap extension, such as course context, quiz syncing, grades, and the risk toggle.
-- **Key Endpoints**:
-  - `POST /update-course-context` - Updates the context for a specific course and triggers video updates accordingly.
-  - `POST /update-course-db` - Updates the database with course quiz information and student data.
-  - `POST /sync-all-quizzes-questions` - Deep sync of all quizzes and questions for a course (instructor only, heavy operation).
-  - `POST /get-student-grade` - Fetches a student's grade for a course from Canvas.
-  - `POST /get-student-profile` - Fetches the Canvas user profile for the current user.
-  - `GET /get-toggle-risk/<course_id>` - Gets whether risk prediction is shown for a course.
-  - `POST /update-toggle-risk/<course_id>` - Updates the risk toggle for a course (requires a Canvas token for an instructor of that course).
-
-### 4. `video_routes.py`
-- **Purpose**: Manages all endpoints related to KnowGap video recommendations, such as retrieving, editing, and voting on videos.
-- **Key Endpoints**:
-  - `POST /get-assessment-videos` - Retrieves recommended videos for the quizzes a student has submissions for.
-  - `POST /get-course-videos` - Retrieves video recommendations for a specified course.
-  - `POST /update-video-link` - Replaces the video link for a question.
-  - `POST /add-video` - Adds a video to a question.
-  - `POST /remove-video` - Removes a video from a question.
-  - `POST /vote-video` - Records a student's upvote or downvote for a recommended video.
-  - `POST /get-video-votes` - Returns vote counts (and the student's own votes) for a list of questions.
-
-### 5. `support_routes.py`
-- **Purpose**: Provides support videos to students based on their risk level.
-- **Key Endpoints**:
-  - `POST /get-support-video` - Returns a random support video for a `low`, `medium`, or `high` risk level.
-
-### 6. `auth_routes.py` (`auth_bp`)
+### 2. `auth_routes.py` (`auth_bp`)
 - **Purpose**: Handles AchieveUp account authentication and profile management.
 - **Key Endpoints**:
   - `POST /auth/signup` - Registers a user with email, password, and Canvas API token. Returns a JWT and user object.
@@ -58,7 +26,7 @@ Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <J
   - `PUT /auth/password` - Changes the user's password.
   - `POST /auth/validate-canvas-token` - Validates a Canvas API token with Canvas before it is stored.
 
-### 7. `canvas_routes.py` (`canvas_bp`)
+### 3. `canvas_routes.py` (`canvas_bp`)
 - **Purpose**: Retrieves Canvas courses, quizzes, and questions using the user's stored Canvas API token.
 - **Key Endpoints**:
   - `GET /canvas/courses` - Gets the user's Canvas courses.
@@ -69,7 +37,7 @@ Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <J
   - `GET /canvas/instructor/courses/<course_id>/quizzes` - Gets all quizzes in a course (instructor view).
   - `GET /canvas/instructor/courses/<course_id>/quizzes/<quiz_id>/questions` - Gets all questions in a quiz (instructor view).
 
-### 8. `achieveup_routes.py` (`achieveup_bp`)
+### 4. `achieveup_routes.py` (`achieveup_bp`)
 - **Purpose**: Core AchieveUp functionality: skill matrices, skill assignment, AI suggestions, progress, badges, and instructor analytics.
 - **Key Endpoints**:
   - Skill matrices:
@@ -103,7 +71,7 @@ Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <J
     - `GET /achieveup/instructor/courses/<course_id>/student-analytics` - Gets per-student skill analytics for a course.
     - `POST /achieveup/instructor/course/<course_id>/force-sync` - Forces a Canvas data and mastery sync for a course.
 
-### 9. `skill_video_routes.py` (`skill_video_bp`)
+### 5. `skill_video_routes.py` (`skill_video_bp`)
 - **Purpose**: Manages the curated list of videos for each skill in AchieveUp.
 - **Key Endpoints**:
   - `POST /achieveup/skill-videos/get` - Gets the curated video list for a skill.
@@ -117,22 +85,20 @@ Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <J
 
 ## Route Initialization
 
-Each KnowGap route file contains an initialization function that registers its routes with the main `app` instance in `app.py`, and each AchieveUp route file exposes a Blueprint that `app.py` registers. This approach keeps route definitions modular, making it easy to maintain and expand the API.
+`base_routes.py` contains an initialization function that registers its routes with the main `app` instance in `app.py`, and each AchieveUp route file exposes a Blueprint that `app.py` registers. This approach keeps route definitions modular, making it easy to maintain and expand the API.
 
 ### Example Initialization in `app.py`
 
 ```python
 from quart import Quart
 from routes.base_routes import init_base_routes
-from routes.video_routes import init_video_routes
 from routes.auth_routes import auth_bp
 from routes.achieveup_routes import achieveup_bp
 
 app = Quart(__name__)
 
-# Registering KnowGap routes
+# Registering base routes
 init_base_routes(app)
-init_video_routes(app)
 
 # Registering AchieveUp blueprints
 app.register_blueprint(auth_bp)
@@ -144,7 +110,7 @@ app.register_blueprint(achieveup_bp)
 Each route validates request data and returns a JSON error response if required fields are missing.
 
 ### Response Structure
-AchieveUp routes return errors as JSON with `error`, `message`, and `statusCode` fields, using the same HTTP status code as `statusCode`. KnowGap extension routes return JSON with `status`/`message` or `error` fields.
+AchieveUp routes return errors as JSON with `error`, `message`, and `statusCode` fields, using the same HTTP status code as `statusCode`.
 
 ## Extending Routes
 
