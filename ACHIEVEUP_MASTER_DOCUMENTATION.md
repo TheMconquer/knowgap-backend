@@ -46,7 +46,6 @@ AchieveUp is an AI-powered skill tracking system that transforms traditional ass
 - `GET /instructor/courses` - Get instructor courses
 - `GET /instructor/courses/:id/quizzes` - Get course quizzes
 - `GET /instructor/quizzes/:id/questions` - Get quiz questions
-- `GET /instructor/students/:courseId` - Get enrolled students
 
 ### **AI-Powered Features**
 - `POST /instructor/ai/suggest-skills` - AI course skill suggestions
@@ -55,12 +54,10 @@ AchieveUp is an AI-powered skill tracking system that transforms traditional ass
 
 ### **Analytics & Dashboard**
 - `GET /instructor/dashboard` - Instructor dashboard
-- `GET /instructor/courses/:id/analytics` - Course analytics
 - `GET /instructor/analytics/risk-assessment/:id` - Risk assessment
 - `GET /instructor/analytics/export/:id` - Export analytics
 
 ### **Skill Matrix Management**
-- `POST /instructor/skill-matrix/create` - Create skill matrix
 - `GET /instructor/skill-matrix/:courseId` - Get skill matrix
 - `PUT /instructor/skill-matrix/:matrixId` - Update skill matrix
 
