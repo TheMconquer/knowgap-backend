@@ -593,6 +593,7 @@ async def get_instructor_courses(canvas_token: str) -> dict:
                 courses.append({
                     'id': str(course.get('id')),
                     'name': course.get('name', ''),
+                    'original_name': course.get('original_name'),
                     'code': course.get('course_code', ''),
                     'term': course.get('enrollment_term_id','')
                     #add code here 'description': course.get('public_description', '')
@@ -798,14 +799,19 @@ async def get_course_students(canvas_token: str, course_id: str) -> dict:
         logger.error(f"Get course students error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
+def official_course_name(course: dict) -> str | None:
+    """The course's real name. When the token's user has nicknamed the course, Canvas puts
+    the nickname in `name` and the real name in `original_name`."""
+    return course.get('original_name') or course.get('name') or None
+
 async def get_course_name(canvas_token: str, course_id: str) -> str | None:
-    """Fetch just a course's name from Canvas (no syllabus or other includes)."""
+    """Fetch just a course's official name from Canvas (no syllabus or other includes)."""
     try:
         headers = {'Authorization': f'Bearer {canvas_token}'}
         async with create_canvas_session() as session:
             async with session.get(f"{CANVAS_API_URL}/courses/{course_id}", headers=headers) as response:
                 if response.status == 200:
-                    return (await response.json()).get('name') or None
+                    return official_course_name(await response.json())
                 logger.error(f"Canvas course name error for {course_id}: {response.status} - {await response.text()}")
     except Exception as e:
         logger.error(f"Get course name error for {course_id}: {str(e)}")

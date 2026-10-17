@@ -463,7 +463,7 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
         badges = [badge_doc async for badge_doc in achieveup_user_badges_collection.find(query, {"_id": 0})]
 
         # Get course names from Canvas API
-        from services.achieveup_canvas_service import get_instructor_courses
+        from services.achieveup_canvas_service import get_instructor_courses, official_course_name
 
         # Create a map of course_id to course_name
         course_map = {}
@@ -488,8 +488,9 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
                 courses = courses_result if isinstance(courses_result, list) else []
                 for course in courses:
                     cid_str = str(course.get('id'))
-                    if cid_str in missing_ids and course.get('name'):
-                        course_map[cid_str] = course['name']
+                    name = official_course_name(course)
+                    if cid_str in missing_ids and name:
+                        course_map[cid_str] = name
             except Exception as e:
                 logger.error(f"Error fetching courses: {str(e)}")
         

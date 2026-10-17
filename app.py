@@ -178,7 +178,7 @@ async def scheduled_update():
                     continue
                     
                 # Fetch courses for this user (we don't store course_ids in user doc, need to fetch)
-                from services.achieveup_canvas_service import get_instructor_courses
+                from services.achieveup_canvas_service import get_instructor_courses, official_course_name
                 courses = await get_instructor_courses(access_token)
                 
                 if isinstance(courses, list):
@@ -193,7 +193,7 @@ async def scheduled_update():
                             await update_course_videos(course_id)
                             
                             # Update mastery
-                            await sync_course_submissions_direct(access_token, course_id, course.get('name'))
+                            await sync_course_submissions_direct(access_token, course_id, official_course_name(course))
                             
                         except Exception as course_error:
                             logger.error("Error processing course ID %s: %s", course_id, course_error)
