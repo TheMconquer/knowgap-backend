@@ -117,6 +117,13 @@ async def create_indexes():
             unique=True,
             name="course_instructor_unique_idx"
         )
+        course_channels_collection = db[
+            Config.ACHIEVEUP_COURSE_CHANNELS_COLLECTION]
+        await course_channels_collection.create_index(
+            [("course_id", 1), ("instructor_id", 1)],
+            unique=True,
+            name="course_instructor_unique_idx"
+        )
         badge_sharing_collection = db[Config.ACHIEVEUP_BADGE_SHARING_COLLECTION]
         await badge_sharing_collection.create_index(
             "canvas_student_id",

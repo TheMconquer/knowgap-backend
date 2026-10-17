@@ -59,6 +59,7 @@ class Config:
     ACHIEVEUP_IMPORT_STATUS_COLLECTION = "AchieveUp_Import_Status"
     ACHIEVEUP_SKILL_VIDEOS_COLLECTION = "AchieveUp_Skill_Videos"
     ACHIEVEUP_SKILL_VIDEO_VOTES_COLLECTION = "AchieveUp_Skill_Video_Votes"
+    ACHIEVEUP_COURSE_CHANNELS_COLLECTION = "AchieveUp_Course_Channels"
     
     # AchieveUp configuration
     ACHIEVEUP_JWT_SECRET = os.getenv("ACHIEVEUP_JWT_SECRET", "achieveup-secret-key-change-in-production")
@@ -79,6 +80,9 @@ class Config:
     # Feature Flags
     ENABLE_DEMO_MODE = os.getenv("ENABLE_DEMO_MODE", "true").lower() == "true"  # Default to true for backward compatibility
     ENABLE_SUBMISSION_CACHE = os.getenv("ENABLE_SUBMISSION_CACHE", "false").lower() == "true"  # Default to false to minimize storage
+
+    MAX_COURSE_CHANNELS: int = 3
+    MAX_CHANNEL_SEARCHES: int = 3
 
     @classmethod
     def check_config(cls):
