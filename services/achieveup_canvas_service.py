@@ -1,5 +1,6 @@
 # services/achieveup_canvas_service.py
 
+import asyncio
 import aiohttp
 import ssl
 import logging
@@ -208,12 +209,14 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
                     if response.status == 401:
                         return {
                             'valid': False,
+                            'statusCode': 400,
                             'message': 'Invalid Canvas API token. Please check your token and try again.'
                         }
                     error_text = await response.text()
                     logger.error(f"Canvas API validation error: {response.status} - {error_text}")
                     return {
                         'valid': False,
+                        'statusCode': 502,
                         'message': f'Canvas API returned error {response.status}. Please try again later.'
                     }
                 user_data = await response.json()
@@ -232,11 +235,13 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
                 if enrollments_response.status == 401:
                     return {
                         'valid': False,
+                        'statusCode': 403,
                         'message': 'Failed to retrieve enrollment information.'
                     }
                 if enrollments_response.status == 404:
                     return {
                         'valid': False,
+                        'statusCode': 403,
                         'message': 'Invalid Canvas API token. Please check your token and try again.'
                     }
                 if enrollments_response.status != 200:
@@ -244,6 +249,7 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
                     logger.error(f"Canvas enrollments validation error: {enrollments_response.status} - {error_text}")
                     return {
                         'valid': False,
+                        'statusCode': 502,
                         'message': f'Canvas API returned error {enrollments_response.status}. Please try again later.'
                     }
                 enrollments_data = await enrollments_response.json()
@@ -252,6 +258,7 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
             if not enrollments_data or len(enrollments_data) == 0:
                 return {
                     'valid': False,
+                    'statusCode': 403,
                     'message': f'Token is valid but user does not have instructor access to course {course_id}.'
                 }
             enrollment_type = enrollments_data[0].get('type', '')
@@ -272,16 +279,18 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
                 }
             }
 
-    except aiohttp.ClientError as e:
-        logger.error(f"Canvas API connection error: {str(e)}")
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        logger.error(f"Canvas API connection error: {e!r}")
         return {
             'valid': False,
+            'statusCode': 503,
             'message': 'Unable to connect to Canvas API. Please check your internet connection and try again.'
         }
     except Exception as e:
         logger.error(f"Canvas course instructor validation error: {str(e)}")
         return {
             'valid': False,
+            'statusCode': 500,
             'message': 'An unexpected error occurred while validating instructor access to the course.'
         }
 

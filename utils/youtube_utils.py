@@ -28,19 +28,22 @@ def get_youtube_client():
     """Builds and returns an authenticated YouTube API client service."""
     return build('youtube', 'v3', developerKey=Config.YOUTUBE_API_KEY)
 
+
 async def resolve_channel_id(youtube, channel_identifier: str) -> str | None:
     """
-    Resolves a channel handle (e.g., '@AmoebaSisters', '@crashcourse') 
-    or returns the channel ID if already formatted as one (starts with 'UC').
+    Resolves a channel handle (e.g., '@AmoebaSisters', '@crashcourse')
+    or channel ID (starts with 'UC') to an ID YouTube confirms exists.
+    Returns None if there's no such channel; raises if the lookup fails.
     """
     clean_id = channel_identifier.strip()
-    
-    # If it's already a UC... channel ID, return as is
+
+    # Look up UC... channel IDs too, so a made-up ID isn't accepted
     if clean_id.startswith('UC') and len(clean_id) == 24:
-        return clean_id
-    
-    # Ensure handle format (e.g., '@AmoebaSisters')
-    handle = clean_id if clean_id.startswith('@') else f"@{clean_id}"    
+        lookup = {'id': clean_id}
+    else:
+        # Ensure handle format (e.g., '@AmoebaSisters')
+        handle = clean_id if clean_id.startswith('@') else f"@{clean_id}"
+        lookup = {'forHandle': handle}
     try:
 
         # Run the synchronous function in a thread pool to make it async-friendly
@@ -48,27 +51,28 @@ async def resolve_channel_id(youtube, channel_identifier: str) -> str | None:
         def fetch_channel_id():
             return youtube.channels().list(
                 part='id',
-                forHandle=handle
-            ).execute()      
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, fetch_channel_id)
-        
+                **lookup
+            ).execute()
+        response = await asyncio.to_thread(fetch_channel_id)
+
         items = response.get('items', [])
         if items:
             return items[0]['id']
-            
+
         return None
 
     except HttpError as e:
-        logging.error(f"HTTP Error resolving handle '{channel_identifier}': {e.resp.status}")
-        return None
+        logging.error(f"HTTP Error resolving handle '{channel_identifier}': "
+                      f"{e.resp.status} {e.reason} {e.error_details}")
+        raise
     except Exception as e:
         logging.error(f"Error resolving channel handle '{channel_identifier}': {e}")
-        return None
+        raise
+
 
 async def fetch_videos_for_topic_and_channel(topic: str, channel_handle: str, limit: int = 3) -> list[dict]:
     """
-    Fetch candidate videos for a given topic from a specific YouTube channel 
+    Fetch candidate videos for a given topic from a specific YouTube channel
     using the official YouTube Data API v3.
     """
     try:
@@ -82,7 +86,7 @@ async def fetch_videos_for_topic_and_channel(topic: str, channel_handle: str, li
             return []
 
         # Step 2: Execute official YouTube search filtered by channelId
-        
+
         # Run the synchronous function in a thread pool to make it async-friendly
         def fetch_videos():
             search_response = youtube.search().list(
@@ -95,8 +99,7 @@ async def fetch_videos_for_topic_and_channel(topic: str, channel_handle: str, li
             results = search_response.get('items', [])
             return results
 
-        loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(None, fetch_videos)
+        results = await asyncio.to_thread(fetch_videos)
 
         if not results:
             logging.warning(f"No results found for topic '{topic}' in channel '{channel_id}'")
@@ -111,18 +114,21 @@ async def fetch_videos_for_topic_and_channel(topic: str, channel_handle: str, li
                 'title': clean_metadata_text(snippet.get('title', 'No Title Found')),
                 'link': f"https://www.youtube.com/watch?v={video_id}",
                 'channel': snippet.get('channelTitle', 'No Channel Found'),
-                'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url', 'No Thumbnail Found')
+                'thumbnail': (snippet.get('thumbnails', {})
+                              .get('high', {}).get('url', ''))
             })
 
         logging.debug(f"Extracted {len(videos)} videos for topic '{topic}' in channel '{channel_id}'")
         return videos
 
     except HttpError as e:
-        logging.error(f"YouTube API HttpError for topic '{topic}' in channel '{channel_handle}': {e.resp.status}")
+        logging.error(f"YouTube API HttpError for topic '{topic}' in channel "
+                      f"'{channel_handle}': {e.resp.status} {e.reason} "
+                      f"{e.error_details}")
         return []
     except Exception as e:
         logging.error(f"Unexpected error fetching videos: {e}")
-        return []    
+        return []
 
 async def fetch_video_for_topic(topic):
     """

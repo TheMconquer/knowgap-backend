@@ -121,6 +121,13 @@ async def create_indexes():
             unique=True,
             name="course_instructor_unique_idx"
         )
+        course_channels_collection = db[
+            Config.ACHIEVEUP_COURSE_CHANNELS_COLLECTION]
+        await course_channels_collection.create_index(
+            [("course_id", 1), ("instructor_id", 1)],
+            unique=True,
+            name="course_instructor_unique_idx"
+        )
         logger.info("Successfully created MongoDB indexes")
     except Exception as e:
         logger.error(f"Failed to create MongoDB indexes: {str(e)}")

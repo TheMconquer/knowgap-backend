@@ -20,7 +20,7 @@ from services.achieveup_service import (
     delete_skill_matrix,  # Add new import
     get_course_description,
     upsert_course_description,
-    get_course_channels, # Add new channel imports
+    get_course_channels,  # Add new channel imports
     update_course_channels
 )
 import logging
@@ -864,6 +864,7 @@ async def instructor_skill_matrix_create_route():
     except Exception as e:
         return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred', 'statusCode': 500}), 500
 
+
 @achieveup_bp.route('/achieveup/instructor/courses/<course_id>/channels', methods=['GET'])
 async def get_channels_endpoint(course_id):
     """
@@ -882,18 +883,25 @@ async def get_channels_endpoint(course_id):
         token = auth_header.split(' ')[1]
         channels = await get_course_channels(token, course_id)
         if isinstance(channels, dict) and 'error' in channels:
-            return jsonify(channels), channels['statusCode']
-        
+            return jsonify({
+                'error': channels['error'],
+                'message': channels.get('message', channels['error']),
+                'statusCode': channels.get('statusCode', 500)
+            }), channels.get('statusCode', 500)
+
         return jsonify({
             "success": True,
             "course_id": str(course_id),
             "channels": channels
         }), 200
     except Exception as e:
+        logger.error(f"Get course channels route error: {str(e)}")
         return jsonify({
-            "success": False,
-            "error": "An unexpected error occurred in GET.",
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
         }), 500
+
 
 @achieveup_bp.route('/achieveup/instructor/courses/<course_id>/channels', methods=['PUT'])
 async def update_channels_endpoint(course_id):
@@ -907,25 +915,32 @@ async def update_channels_endpoint(course_id):
         if not auth_header or not auth_header.startswith('Bearer '):
             return jsonify({'error': 'Missing token', 'message': 'Authorization header with Bearer token is required', 'statusCode': 401}), 401
         token = auth_header.split(' ')[1]
-        data = await request.get_json()
+        data = await request.get_json(silent=True)
 
-        if not data or "channels" not in data:
+        if not isinstance(data, dict) or "channels" not in data:
             return jsonify({
-                "success": False,
-                "error": "Missing 'channels' array in request body."
+                'error': 'Invalid request',
+                'message': "Missing 'channels' array in request body.",
+                'statusCode': 400
             }), 400
 
         channels_list = data.get("channels", [])
         if not isinstance(channels_list, list):
             return jsonify({
-                "success": False,
-                "error": "'channels' must be a list of channel handles or IDs."
+                'error': 'Invalid request',
+                'message': ("'channels' must be a list of channel handles "
+                            "or IDs."),
+                'statusCode': 400
             }), 400
 
         result = await update_course_channels(token, course_id, channels_list)
 
         if isinstance(result, dict) and 'error' in result:
-            return jsonify(result), result['statusCode']
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
 
         if result:
             updated_channels = result['channels']
@@ -937,15 +952,19 @@ async def update_channels_endpoint(course_id):
             }), 200
         else:
             return jsonify({
-                "success": False,
-                "error": "Failed to save channels to the database."
+                'error': 'Internal server error',
+                'message': 'Failed to save channels to the database.',
+                'statusCode': 500
             }), 500
 
     except Exception as e:
+        logger.error(f"Update course channels route error: {str(e)}")
         return jsonify({
-            "success": False,
-            "error": "An unexpected error occurred in PUT."
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
         }), 500
+
 
 @achieveup_bp.route('/achieveup/instructor/courses/<course_id>/analytics', methods=['GET'])
 async def instructor_course_analytics_route(course_id):

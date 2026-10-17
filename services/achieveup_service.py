@@ -3,7 +3,11 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from services.achieveup_auth_service import achieveup_verify_token
+from services.achieveup_auth_service import (
+    achieveup_verify_token,
+    get_user_canvas_token,
+    require_instructor,
+)
 from config import Config
 
 import re
@@ -11,6 +15,9 @@ from html import unescape
 
 from mongodb import get_db
 from utils.youtube_utils import get_youtube_client, resolve_channel_id
+from services.achieveup_canvas_service import (
+    validate_canvas_instructor_for_course,
+)
 
 def normalize_quiz_title(title: str) -> str:
     if not title:
@@ -47,7 +54,6 @@ achieveup_import_status_collection = db[Config.ACHIEVEUP_IMPORT_STATUS_COLLECTIO
 achieveup_course_channels_collection = db[Config.ACHIEVEUP_COURSE_CHANNELS_COLLECTION]
 
 MAX_COURSE_DESCRIPTION_LENGTH = 12000
-MAX_COURSE_CHANNELS = 3
 
 async def create_skill_matrix(token: str, course_id: str, matrix_name: str, skills: list) -> dict:
     """Create skill matrix for a course."""
@@ -2011,58 +2017,62 @@ async def get_import_status(token: str, course_id: str) -> dict:
     
 
 # Adding functions to manage YouTube channels for courses
+async def require_course_instructor(token: str, course_id: str):
+    """Return (user, None) if the user is an instructor Canvas confirms
+    teaches the course, otherwise (None, error_dict)."""
+    user, error = await require_instructor(token)
+    if error:
+        return None, error
+
+    course_check = await validate_canvas_instructor_for_course(
+        await get_user_canvas_token(user['id']), str(course_id))
+    if not course_check.get('valid'):
+        # Only a denial is a 403. Canvas outages (502/503) and token
+        # problems (400) keep their own status.
+        status = course_check.get('statusCode', 403)
+        return None, {
+            'error': 'Access denied' if status == 403 else 'Canvas error',
+            'message': course_check.get('message'),
+            'statusCode': status
+        }
+    return user, None
+
+
+async def get_saved_course_channels(course_id: str, instructor_id: str):
+    """Return the channels an instructor saved for a course. A plain database
+    read with no auth or Canvas checks, so callers do their own."""
+    course_doc = await achieveup_course_channels_collection.find_one(
+        {"course_id": str(course_id), "instructor_id": instructor_id})
+    return (course_doc or {}).get("youtube_channels", [])
+
+
 async def get_course_channels(token: str, course_id: str) -> list | dict:
     """
     Fetch configured YouTube channels for a given course ID.
-    Returns a list of channel handles/IDs or an empty list if none found.
+    Returns a list of channel handles/IDs (empty if none are saved), or an
+    error dict if the user can't access the course.
     """
     # Verify user token
     try:
-        # Verify the user is an instructor.
-        from services.skill_video_service import _require_instructor
-        user, error = await _require_instructor(token)
-        
+        user, error = await require_course_instructor(token, course_id)
         if error:
             return error
-        
-        from services.achieveup_auth_service import get_user_canvas_token
-        from services.achieveup_canvas_service import validate_canvas_instructor_for_course
-        course_check = await validate_canvas_instructor_for_course(await get_user_canvas_token(user['id']), str(course_id))
-        if not course_check.get('valid'):
-            return {'error': 'Access denied', 'message': course_check.get('message'), 'statusCode': 403}
-        
-        user_id = user['id']
 
-        # Checks the course settings/metadata document
-        course_doc = await achieveup_course_channels_collection.find_one(
-            {"course_id": str(course_id), "instructor_id": user_id})
-
-        if course_doc and "youtube_channels" in course_doc:
-            return course_doc["youtube_channels"]
-            
-        return []
+        return await get_saved_course_channels(course_id, user['id'])
     except Exception as e:
         logger.error(f"Error fetching channels for course {course_id}: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
+
 
 async def update_course_channels(token: str, course_id: str, channels: list):
     """
     Update or insert configured YouTube channels for a given course ID.
     """
     try:
-        # Verify the user is an instructor.
-        from services.skill_video_service import _require_instructor
-        user, error = await _require_instructor(token)
-        
+        user, error = await require_course_instructor(token, course_id)
         if error:
             return error
-        
-        from services.achieveup_auth_service import get_user_canvas_token
-        from services.achieveup_canvas_service import validate_canvas_instructor_for_course
-        course_check = await validate_canvas_instructor_for_course(await get_user_canvas_token(user['id']), str(course_id))
-        if not course_check.get('valid'):
-            return {'error': 'Access denied', 'message': course_check.get('message'), 'statusCode': 403}
-        
+
         user_id = user['id']
 
         # Clean and sanitize input (remove duplicates & whitespace)
@@ -2070,11 +2080,26 @@ async def update_course_channels(token: str, course_id: str, channels: list):
             c.strip() for c in channels if isinstance(c, str) and c.strip()
         ]))
 
-        # Check that each channel exists.
-        if len(clean_channels) > MAX_COURSE_CHANNELS:
-            return {'error': 'Too many channels', 'message': f'Link up to {MAX_COURSE_CHANNELS} channels', 'statusCode': 400}
+        if len(clean_channels) > Config.MAX_COURSE_CHANNELS:
+            return {
+                'error': 'Too many channels',
+                'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
+                'statusCode': 400
+            }
+
+        # Check that each channel exists. If the lookup itself fails (quota,
+        # bad key, outage), say so rather than "channel not found".
         youtube = get_youtube_client()
-        not_found = [c for c in clean_channels if not await resolve_channel_id(youtube, c)]
+        try:
+            not_found = [c for c in clean_channels
+                         if not await resolve_channel_id(youtube, c)]
+        except Exception:
+            return {
+                'error': 'YouTube unavailable',
+                'message': ("Couldn't reach YouTube to check these "
+                            "channels. Please try again later."),
+                'statusCode': 502
+            }
         if not_found:
             return {'error': 'Channel not found', 'message': f"Couldn't find these YouTube channels: {', '.join(not_found)}", 'statusCode': 400}
 
@@ -2085,7 +2110,8 @@ async def update_course_channels(token: str, course_id: str, channels: list):
             {"$set": {
                 "course_id": str(course_id),
                 "youtube_channels": clean_channels,
-                "instructor_id": user_id
+                "instructor_id": user_id,
+                "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
             }},
             upsert=True
         )
