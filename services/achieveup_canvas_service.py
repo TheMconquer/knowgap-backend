@@ -14,6 +14,7 @@ from services.achieveup_canvas_demo_service import (
     validate_demo_canvas_token
 )
 from config import Config
+from utils import text_utils
 
 from mongodb import get_db
 
@@ -68,7 +69,7 @@ def _extract_next_canvas_link(link_header: str) -> str:
     return None
 
 
-async def _fetch_all_canvas_pages(session, url: str, headers: dict, params: dict = None):
+async def _fetch_all_canvas_pages(session, url: str, headers: dict, params: dict = None, resource: str = 'instructor courses'):
     """Fetch all pages from a Canvas endpoint and return a combined list payload."""
     all_items = []
     next_url = url
@@ -82,7 +83,7 @@ async def _fetch_all_canvas_pages(session, url: str, headers: dict, params: dict
                 error_text = await response.text()
                 logger.error(f"Canvas pagination request failed: {response.status} - {error_text}")
                 return None, {
-                    'error': f'Failed to fetch instructor courses: {response.status}',
+                    'error': f'Failed to fetch {resource}: {response.status}',
                     'statusCode': response.status
                 }
 
@@ -108,6 +109,7 @@ achieveup_canvas_questions_collection = db[Config.ACHIEVEUP_CANVAS_QUESTIONS_COL
 
 # Canvas API configuration
 CANVAS_API_URL = getattr(Config, 'CANVAS_API_URL', 'https://webcourses.ucf.edu/api/v1')
+CANVAS_GRAPHQL_API_URL = getattr(Config, "CANVAS_GRAPHQL_API_URL")
 
 async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'student') -> dict:
     """Validate Canvas API token by testing it with Canvas API. Supports student and instructor tokens."""
@@ -385,27 +387,43 @@ async def get_canvas_course_quizzes(token: str, course_id: str) -> dict:
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
-        
-        url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes"
-        params = {
-            'per_page': 100
+
+        json_payload: dict = {
+            "query": "query get_course_quizzes ($course_id: ID!) {" \
+                        "course(id: $course_id) {" \
+                            "quizzesConnection(first: 100) {" \
+                            "nodes {" \
+                                "title," \
+                                "_id" \
+                            "}" \
+                            "}" \
+                        "}" \
+                        "}",
+            "variables": {"course_id": course_id}
         }
+
         
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
+            async with session.post(CANVAS_GRAPHQL_API_URL, headers=headers, json=json_payload) as response:
                 if response.status == 200:
                     quizzes_data = await response.json()
-                    
-                    # Transform to AchieveUp format
+
+                    if "errors" in quizzes_data:
+                        logger.error(f"Canvas' GraphQL API call returned an error: {quizzes_data['errors']}")
+                        return {
+                            "error": "Canvas API call error.",
+                            "message": "An error occured when attempting to communicate with Canvas' API.",
+                            "statusCode": 400
+                        }
+
                     quizzes = []
-                    for quiz in quizzes_data:
-                        quiz_info = {
-                            'id': str(quiz.get('id')),
+                    for quiz in quizzes_data.get("data").get("course", {}).get("quizzesConnection", {}).get("nodes"):
+                        quizzes.append({
+                            'id': str(quiz.get('_id')),
                             'title': quiz.get('title', ''),
                             'course_id': str(course_id)
-                        }
-                        quizzes.append(quiz_info)
-                    
+                        })
+
                     return quizzes
                 else:
                     error_text = await response.text()
@@ -457,7 +475,9 @@ async def get_canvas_quiz_questions(token: str, quiz_id: str) -> dict:
             'per_page': 100
         }
         
+
         async with create_canvas_session() as session:
+            
             async with session.get(url, headers=headers, params=params) as response:
                 if response.status == 200:
                     questions_data = await response.json()
@@ -603,16 +623,38 @@ async def get_instructor_course_quizzes(canvas_token: str, course_id: str) -> di
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
-        url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes"
-        params = {'per_page': 100}
+
+        json_payload: dict = {
+            "query": "query get_course_quizzes ($course_id: ID!) {" \
+                        "course(id: $course_id) {" \
+                            "quizzesConnection(first: 100) {" \
+                            "nodes {" \
+                                "title," \
+                                "_id" \
+                            "}" \
+                            "}" \
+                        "}" \
+                        "}",
+            "variables": {"course_id": course_id}
+        }
+
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
+            async with session.post(CANVAS_GRAPHQL_API_URL, headers=headers, json=json_payload) as response:
                 if response.status == 200:
                     quizzes_data = await response.json()
+
+                    if "errors" in quizzes_data:
+                        logger.error(f"Canvas' GraphQL API call returned an error: {quizzes_data['errors']}")
+                        return {
+                            "error": "Canvas API call error.",
+                            "message": "An error occured when attempting to communicate with Canvas' API.",
+                            "statusCode": 400
+                        }
+
                     quizzes = []
-                    for quiz in quizzes_data:
+                    for quiz in quizzes_data.get("data").get("course", {}).get("quizzesConnection", {}).get("nodes"):
                         quizzes.append({
-                            'id': str(quiz.get('id')),
+                            'id': str(quiz.get('_id')),
                             'title': quiz.get('title', ''),
                             'course_id': str(course_id)
                         })
@@ -640,24 +682,83 @@ async def get_instructor_quiz_questions(canvas_token: str, quiz_id: str, course_
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
         }
+
         url = f"{CANVAS_API_URL}/courses/{course_id}/quizzes/{quiz_id}/questions"
+        new_quizzes_url: str = f"{getattr(Config, 'CANVAS_NEW_QUIZ_API_URL')}/courses/{course_id}/quizzes/{quiz_id}/items"
         params = {'per_page': 100}
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
-                if response.status == 200:
-                    questions_data = await response.json()
-                    questions = []
-                    for question in questions_data:
-                        questions.append({
-                            'id': str(question.get('id')),
-                            'question_text': question.get('question_text', ''),
-                            'quiz_id': str(quiz_id)
-                        })
-                    return questions
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Canvas instructor quiz questions error: {response.status} - {error_text}")
-                    return {'error': f'Failed to fetch instructor quiz questions: {response}', 'statusCode': response.status}
+
+            match await is_new_quiz(canvas_token, course_id, quiz_id):
+
+                # Classic quiz logic.
+                case False:
+                    async with session.get(url, headers=headers, params=params) as response:
+                        if response.status == 200:
+                            questions_data = await response.json()
+                            questions = []
+                            for question in questions_data:
+                                if question.get('question_type') == 'text_only_question': continue
+                                question_text = question.get('question_text', '')
+
+                                # Extract Canvas file IDs from any embedded images
+                                _, attachment_ids, attachment_urls = text_utils.parse_html(question_text)
+
+                                answers = question.get('answers', [])
+                                raw_answer_texts = [a.get('text') or '' for a in answers]
+                                answer_texts = [text_utils.normalize_text(t) for t in raw_answer_texts if t.strip()]
+                                question_key = text_utils.build_question_key(
+                                    question_text, raw_answer_texts, fallback_id=question.get('id')
+                                )
+
+                                questions.append({
+                                    'id': str(question.get('id')),
+                                    'question_text': question_text,
+                                    'quiz_id': str(quiz_id),
+                                    'attachment_ids': attachment_ids,
+                                    'attachment_urls': attachment_urls,
+                                    'answer_texts': answer_texts,
+                                    'question_key': question_key
+                                })
+                            return questions
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"Canvas instructor quiz questions error: {response.status} - {error_text}")
+                            return {'error': f'Failed to fetch instructor quiz questions: {response.status}', 'statusCode': response.status}
+                
+                # New quiz logic.
+                case True:
+                    async with session.get(new_quizzes_url, headers=headers, params=params) as res:
+                        if res.status == 200:
+                            questions_data = await res.json()
+
+                            # Check for errors.
+                            if "errors" in questions_data:
+                                logger.error(f"Canvas instructor quiz questions error: {questions_data.get('errors')}")
+                                return {'error': f'Failed to fetch instructor quiz questions.', 'statusCode': res.status}
+
+                            # Return all question fields that are not stimulus.
+                            questions = []
+                            for question in questions_data:
+                                if question.get("entry_type") == "Stimulus":
+                                    continue
+                                item_body = (question.get("entry") or {}).get("item_body")
+                                questions.append({
+                                    "id": str(question.get("id")),
+                                    "question_text": item_body,
+                                    "quiz_id": str(quiz_id),
+                                    "question_key": text_utils.build_question_key(
+                                        item_body, fallback_id=question.get('id')
+                                    )
+                                })
+                            return questions
+                        else:
+                            logger.error(f"Canvas instructor quiz questions error: {res.status} - {await res.text()}")
+                            return {'error': f'Failed to fetch instructor quiz questions: {res.status}', 'statusCode': res.status}
+                        
+                # Could not find quiz.
+                case None:
+                    logger.error(f"Failed to determine quiz type: {course_id}, quiz_id: {quiz_id}")
+                    return {'error': f'Failed to determine instructor quiz type.', 'statusCode': 404}
     except Exception as e:
         logger.error(f"Get instructor quiz questions error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
@@ -682,31 +783,26 @@ async def get_course_students(canvas_token: str, course_id: str) -> dict:
         }
         
         async with create_canvas_session() as session:
-            async with session.get(url, headers=headers, params=params) as response:
-                if response.status == 200:
-                    enrollments_data = await response.json()
-                    
-                    students = []
-                    for enrollment in enrollments_data:
-                        user = enrollment.get('user', {})
-                        students.append({
-                            'id': str(user.get('id')),
-                            'name': user.get('name', ''),
-                            'email': user.get('email', ''),
-                            'sortable_name': user.get('sortable_name', ''),
-                            'enrollment_state': enrollment.get('enrollment_state', ''),
-                            'course_id': str(course_id)
-                        })
-                    
-                    return students
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Canvas students error: {response.status} - {error_text}")
-                    return {
-                        'error': f'Failed to fetch students: {response.status}',
-                        'statusCode': response.status
-                    }
-                    
+            enrollments_data, error = await _fetch_all_canvas_pages(
+                session, url, headers, params, resource='students'
+            )
+            if error:
+                return error
+
+            students = []
+            for enrollment in enrollments_data:
+                user = enrollment.get('user', {})
+                students.append({
+                    'id': str(user.get('id')),
+                    'name': user.get('name', ''),
+                    'email': user.get('email', ''),
+                    'sortable_name': user.get('sortable_name', ''),
+                    'enrollment_state': enrollment.get('enrollment_state', ''),
+                    'course_id': str(course_id)
+                })
+
+            return students
+
     except Exception as e:
         logger.error(f"Get course students error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
@@ -816,3 +912,113 @@ def clean_html(text: str) -> str:
     clean_text = html.unescape(clean_text)
     
     return clean_text 
+
+async def is_new_quiz(canvas_api_token: str, course_id: str, quiz_id: str) -> bool | None:
+    """Checks whether a quiz in a class is a new quiz or a classic quiz."""
+
+    headers = {
+        'Authorization': f'Bearer {canvas_api_token}',
+        'Content-Type': 'application/json'
+    }
+
+    after: str | None = None
+
+    json_query: str = "query get_quiz_types($course_id: ID!, $after: String) {" \
+                    "course(id: $course_id) {" \
+                        "assignmentsConnection(first: 100, after: $after) {" \
+                            "nodes {" \
+                                "_id," \
+                                "submissionTypes," \
+                                "quiz {" \
+                                    "_id" \
+                                "}," \
+                                "isNewQuiz" \
+                            "}," \
+                            "pageInfo {" \
+                                "hasNextPage," \
+                                "endCursor" \
+                            "}" \
+                        "}" \
+                    "}" \
+                "}"
+
+    async with create_canvas_session() as session:
+        while True:
+            json_payload: dict = {
+                "query": json_query,
+                "variables": {"course_id": course_id, "after": after}
+            }
+
+            async with session.post(CANVAS_GRAPHQL_API_URL, headers=headers, json=json_payload) as res:
+
+                # Check for response errors.
+                if res.status == 200:
+                    quizzes_data = await res.json()
+
+                    if "errors" in quizzes_data:
+                        logger.error(f"Canvas' GraphQL API call returned an error: {quizzes_data['errors']}")
+                        return
+
+                    quizzes = (((quizzes_data.get("data") or {}).get("course") or {}).get("assignmentsConnection") or {})
+                    
+                    # Check every quiz to find the matching quiz.
+                    for quiz in (quizzes.get("nodes") or []):
+                        if (quiz.get("quiz") or {}).get("_id", "") == quiz_id or quiz.get("_id") == quiz_id:
+                            if quiz.get("isNewQuiz", False) is True:
+                                return True
+                            else:
+                                return False
+                    
+                    # If quiz not found and there is another results page, move to it.
+                    current_page_info: dict = quizzes.get("pageInfo") or {}
+                    if not (current_page_info.get("hasNextPage")):
+                        return
+                    
+                    after = current_page_info.get("endCursor")
+                else:
+                    logger.error(f"Canvas' GraphQL API call returned an error.")
+                    return
+
+async def get_token_expiration(canvas_api_token: str) -> tuple[int, datetime | None]:
+    """
+    Checks whether a Canvas token has an expiration date, and if so returns the expiration date.
+    HTTP status codes are used to convey whether the token is valid or not. If the returned status
+    is 200 paired with a None value, the token has no expiration date set.
+    """
+
+    headers = {
+            'Authorization': f'Bearer {canvas_api_token}',
+            'Content-Type': 'application/json'
+            }
+
+    url = f"{CANVAS_API_URL}/users/self/tokens/{canvas_api_token[:10]}"
+
+    try:
+        async with create_canvas_session() as session:
+            async with session.get(url, headers=headers) as res:
+                
+                # If statements to check the API status code
+                # and return the correct HTTP code.
+                if res.status in (401, 404):
+                    return 401, None
+                elif res.status != 200:
+                    error_text = await res.text()
+                    logger.error(f"Canvas API validation error: {res.status} - {error_text}")
+                    return res.status, None
+                
+                token_information = await res.json()
+
+                # Get token expiration data.
+                expiration_information: str | None = token_information.get("expires_at")
+                expiration_date: datetime | None = (
+                                datetime.fromisoformat(expiration_information.replace("Z", "+00:00"))
+                                .astimezone(timezone.utc)
+                                .replace(tzinfo=None)
+                                if expiration_information else None
+                            )
+                
+                return 200, expiration_date
+
+    except Exception as err:
+        logger.error(f"Error checking token information: {str(err)}")
+        return 500, None

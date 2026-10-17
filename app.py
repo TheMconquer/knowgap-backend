@@ -17,12 +17,10 @@ from routes.support_routes import init_support_routes
 from routes.course_routes import init_course_routes
 from routes.auth_routes import auth_bp
 from routes.canvas_routes import canvas_bp
-from routes.skill_routes import skill_bp
 from routes.badge_routes import badge_bp
 from routes.progress_routes import progress_bp
 from routes.analytics_routes import analytics_bp
 from routes.achieveup_routes import achieveup_bp
-from routes.instructor_routes import instructor_bp
 from routes.skill_video_routes import skill_video_bp
 from mongodb import get_db
 
@@ -90,11 +88,9 @@ init_support_routes(app)
 app.register_blueprint(auth_bp)
 app.register_blueprint(canvas_bp)
 app.register_blueprint(achieveup_bp)
-app.register_blueprint(skill_bp)
 app.register_blueprint(badge_bp)
 app.register_blueprint(progress_bp)
 app.register_blueprint(analytics_bp)
-app.register_blueprint(instructor_bp)
 app.register_blueprint(skill_video_bp)
 
 # Apply CORS after routes are initialized
@@ -127,6 +123,12 @@ async def create_indexes():
             [("course_id", 1), ("instructor_id", 1)],
             unique=True,
             name="course_instructor_unique_idx"
+        )
+        badge_sharing_collection = db[Config.ACHIEVEUP_BADGE_SHARING_COLLECTION]
+        await badge_sharing_collection.create_index(
+            "canvas_student_id",
+            unique=True,
+            name="badge_sharing_canvas_student_id_unique_idx"
         )
         logger.info("Successfully created MongoDB indexes")
     except Exception as e:
