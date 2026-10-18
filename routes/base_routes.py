@@ -1,3 +1,4 @@
+from config import Config
 from quart import jsonify, request, Response
 
 def init_base_routes(app):
@@ -13,8 +14,8 @@ def init_base_routes(app):
             allowed_origins = [
                 "https://canvas.instructure.com",
                 "https://webcourses.ucf.edu",
-                "https://achieveup.netlify.app",
-                "https://achieveupapp.com",
+                Config.FRONTEND_URL,
+                Config.FRONTEND_HOSTING_URL,
                 "http://localhost:3000"
             ]
             if origin in allowed_origins or (origin and origin.startswith('chrome-extension://')):

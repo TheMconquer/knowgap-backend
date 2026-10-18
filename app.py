@@ -38,13 +38,12 @@ app = Quart(__name__)
 app = cors(app, 
     allow_origin=[
         "chrome-extension://*",  # Allow all Chrome extensions
-        "https://canvas.instructure.com",  # Allow Canvas
+        f"https://{Config.CANVAS_DOMAIN}",  # Allow Canvas
         "https://webcourses.ucf.edu",  # Allow UCF Canvas
         "http://localhost:3000",  # Allow AchieveUp frontend development
         "http://localhost:5001",  # Allow local API testing
         "http://127.0.0.1:5001",  # Allow local API testing (IP)
-        "https://achieveup.netlify.app",  # Allow AchieveUp frontend production
-        "https://achieveupapp.com"
+        Config.FRONTEND_URL
     ],
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -168,7 +167,7 @@ async def scheduled_update():
                 
         # 2. Process AchieveUp Users (Instructors with Canvas Tokens)
         achieveup_users = db[Config.ACHIEVEUP_USERS_COLLECTION]
-        link = "canvas.instructure.com" # Default link for AchieveUp users
+        link = Config.CANVAS_DOMAIN # Default link for AchieveUp users
         
         async for user in achieveup_users.find({"role": "instructor", "canvas_api_token": {"$exists": True, "$ne": None}}):
             try:
