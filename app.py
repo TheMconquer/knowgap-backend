@@ -32,7 +32,7 @@ app = cors(app,
         "http://localhost:5001",  # Allow local API testing
         "http://127.0.0.1:5001",  # Allow local API testing (IP)
         Config.FRONTEND_URL,
-        Config.FRONTEND_HOSTING_URL,
+        Config.FRONTEND_HOSTING_URL
     ],
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
