@@ -14,7 +14,7 @@ import re
 from html import unescape
 
 from mongodb import get_db
-from utils.youtube_utils import get_youtube_client, resolve_channel_id
+from utils.youtube_utils import resolve_channel_id
 from services.achieveup_canvas_service import (
     validate_canvas_instructor_for_course,
 )
@@ -1376,7 +1376,31 @@ async def get_import_status(token: str, course_id: str) -> dict:
         return {'error': 'Internal server error', 'statusCode': 500}
     
 
-# Adding functions to manage YouTube channels for courses
+async def check_course_instructor(user: dict, course_id: str):
+    """Return None if Canvas confirms the (already verified) instructor
+    teaches the course, otherwise an error dict."""
+    canvas_token = await get_user_canvas_token(user['id'])
+    if not canvas_token:
+        return {
+            'error': 'Canvas not connected',
+            'message': 'No Canvas API token is linked to your account.',
+            'statusCode': 400
+        }
+
+    course_check = await validate_canvas_instructor_for_course(
+        canvas_token, str(course_id))
+    if not course_check.get('valid'):
+        # Only a denial is a 403. Canvas outages (502/503) and token
+        # problems (400) keep their own status.
+        status = course_check.get('statusCode', 403)
+        return {
+            'error': 'Access denied' if status == 403 else 'Canvas error',
+            'message': course_check.get('message'),
+            'statusCode': status
+        }
+    return None
+
+
 async def require_course_instructor(token: str, course_id: str):
     """Return (user, None) if the user is an instructor Canvas confirms
     teaches the course, otherwise (None, error_dict)."""
@@ -1384,17 +1408,9 @@ async def require_course_instructor(token: str, course_id: str):
     if error:
         return None, error
 
-    course_check = await validate_canvas_instructor_for_course(
-        await get_user_canvas_token(user['id']), str(course_id))
-    if not course_check.get('valid'):
-        # Only a denial is a 403. Canvas outages (502/503) and token
-        # problems (400) keep their own status.
-        status = course_check.get('statusCode', 403)
-        return None, {
-            'error': 'Access denied' if status == 403 else 'Canvas error',
-            'message': course_check.get('message'),
-            'statusCode': status
-        }
+    error = await check_course_instructor(user, course_id)
+    if error:
+        return None, error
     return user, None
 
 
@@ -1412,7 +1428,6 @@ async def get_course_channels(token: str, course_id: str) -> list | dict:
     Returns a list of channel handles/IDs (empty if none are saved), or an
     error dict if the user can't access the course.
     """
-    # Verify user token
     try:
         user, error = await require_course_instructor(token, course_id)
         if error:
@@ -1435,10 +1450,15 @@ async def update_course_channels(token: str, course_id: str, channels: list):
 
         user_id = user['id']
 
-        # Clean and sanitize input (remove duplicates & whitespace)
-        clean_channels = list(dict.fromkeys([
-            c.strip() for c in channels if isinstance(c, str) and c.strip()
-        ]))
+        if any(not isinstance(c, str) or not c.strip() for c in channels):
+            return {
+                'error': 'Invalid channels',
+                'message': 'Each channel must be a non-empty YouTube handle or channel ID.',
+                'statusCode': 400
+            }
+
+        # Remove duplicates & whitespace
+        clean_channels = list(dict.fromkeys(c.strip() for c in channels))
 
         if len(clean_channels) > Config.MAX_COURSE_CHANNELS:
             return {
@@ -1447,12 +1467,19 @@ async def update_course_channels(token: str, course_id: str, channels: list):
                 'statusCode': 400
             }
 
-        # Check that each channel exists. If the lookup itself fails (quota,
-        # bad key, outage), say so rather than "channel not found".
-        youtube = get_youtube_client()
+        # Resolve each channel to its YouTube ID and drop entries that point
+        # at a channel already listed (e.g. '@Foo', '@foo' or Foo's own ID).
+        # If the lookup itself fails (quota, bad key, outage), say so rather
+        # than "channel not found".
+        saved_channels = []
+        not_found = []
         try:
-            not_found = [c for c in clean_channels
-                         if not await resolve_channel_id(youtube, c)]
+            for c in clean_channels:
+                channel_id = await resolve_channel_id(c)
+                if not channel_id:
+                    not_found.append(c)
+                elif channel_id not in saved_channels:
+                    saved_channels.append(channel_id)
         except Exception:
             return {
                 'error': 'YouTube unavailable',
@@ -1463,25 +1490,20 @@ async def update_course_channels(token: str, course_id: str, channels: list):
         if not_found:
             return {'error': 'Channel not found', 'message': f"Couldn't find these YouTube channels: {', '.join(not_found)}", 'statusCode': 400}
 
-        # Perform the async update on the Motor collection
-        result = await achieveup_course_channels_collection.update_one(
+        await achieveup_course_channels_collection.update_one(
             {"course_id": str(course_id),
              "instructor_id": user_id},
             {"$set": {
                 "course_id": str(course_id),
-                "youtube_channels": clean_channels,
+                "youtube_channels": saved_channels,
                 "instructor_id": user_id,
                 "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
             }},
             upsert=True
         )
 
-        if result.acknowledged:
-            logger.info(f"Successfully saved channels for course {course_id}: {clean_channels}")
-            return {'channels': clean_channels}
-
-        logger.warning(f"MongoDB operation was not acknowledged for course {course_id}")
-        return False
+        logger.info(f"Successfully saved channels for course {course_id}: {saved_channels}")
+        return {'channels': saved_channels}
 
     except Exception as e:
         logger.error(f"MongoDB Error in update_course_channels for course {course_id}: {str(e)}", exc_info=True)

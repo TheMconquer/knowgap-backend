@@ -17,7 +17,7 @@ from services.achieveup_service import (
     delete_skill_matrix,  # Add new import
     get_course_description,
     upsert_course_description,
-    get_course_channels,  # Add new channel imports
+    get_course_channels,
     update_course_channels
 )
 import logging
@@ -1006,6 +1006,13 @@ async def update_channels_endpoint(course_id):
         token = auth_header.split(' ')[1]
         data = await request.get_json(silent=True)
 
+        if data is None:
+            return jsonify({
+                'error': 'Invalid request',
+                'message': 'Request body must be valid JSON.',
+                'statusCode': 400
+            }), 400
+
         if not isinstance(data, dict) or "channels" not in data:
             return jsonify({
                 'error': 'Invalid request',
@@ -1031,20 +1038,12 @@ async def update_channels_endpoint(course_id):
                 'statusCode': result.get('statusCode', 500)
             }), result.get('statusCode', 500)
 
-        if result:
-            updated_channels = result['channels']
-            return jsonify({
-                "success": True,
-                "message": "Course channels updated successfully.",
-                "course_id": str(course_id),
-                "channels": updated_channels
-            }), 200
-        else:
-            return jsonify({
-                'error': 'Internal server error',
-                'message': 'Failed to save channels to the database.',
-                'statusCode': 500
-            }), 500
+        return jsonify({
+            "success": True,
+            "message": "Course channels updated successfully.",
+            "course_id": str(course_id),
+            "channels": result['channels']
+        }), 200
 
     except Exception as e:
         logger.error(f"Update course channels route error: {str(e)}")

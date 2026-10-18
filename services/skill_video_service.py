@@ -6,16 +6,17 @@ from datetime import datetime, timezone
 
 from config import Config
 from mongodb import get_db
-from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
 from services.achieveup_auth_service import (
-    require_instructor as _require_instructor,
+    achieveup_verify_token,
+    get_user_canvas_token,
+    require_instructor,
 )
 from services.achieveup_service import (
     achieveup_question_skills_collection,
     achieveup_skill_matrices_collection,
     achieveup_course_descriptions_collection,
     get_saved_course_channels,
-    require_course_instructor
+    check_course_instructor
 )
 from utils.ai_utils import generate_skill_search_topics
 from utils.youtube_utils import fetch_videos_for_topic, get_video_metadata, fetch_video_transcript, fetch_videos_for_topic_and_channel
@@ -127,7 +128,7 @@ async def add_skill_video(token: str, course_id: str, skill_name: str, link: str
                            thumbnail: str = None, source: str = 'manual') -> dict:
     """Instructor adds a video to a skill's curated list."""
     try:
-        user, error = await _require_instructor(token)
+        user, error = await require_instructor(token)
         if error:
             return error
 
@@ -172,7 +173,7 @@ async def add_skill_video(token: str, course_id: str, skill_name: str, link: str
 async def update_skill_video(token: str, video_id: str, updates: dict) -> dict:
     """Instructor edits a video, or accepts an AI-suggested candidate by flipping its status."""
     try:
-        _, error = await _require_instructor(token)
+        _, error = await require_instructor(token)
         if error:
             return error
 
@@ -203,7 +204,7 @@ async def update_skill_video(token: str, video_id: str, updates: dict) -> dict:
 async def remove_skill_video(token: str, video_id: str) -> dict:
     """Instructor removes a video and its votes."""
     try:
-        _, error = await _require_instructor(token)
+        _, error = await require_instructor(token)
         if error:
             return error
 
@@ -224,7 +225,7 @@ async def verify_ai_video(token: str, video_id: str) -> dict:
     """Instructor marks an AI-suggested video as reviewed/approved — this is distinct
     from `source` (who added it) so it doesn't change source-gated behavior."""
     try:
-        _, error = await _require_instructor(token)
+        _, error = await require_instructor(token)
         if error:
             return error
 
@@ -261,7 +262,7 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
     a separate instructor-approval step.
     """
     try:
-        user, error = await _require_instructor(token)
+        user, error = await require_instructor(token)
         if error:
             return error
 
@@ -321,7 +322,7 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
         if configured_channels:
             logger.info(f"Prioritizing search across configured channels: {configured_channels}")
             # Calculate how many videos to request per channel
-            per_channel_limit = count // len(configured_channels)
+            per_channel_limit = max(1, count // len(configured_channels))
 
             channel_searches: int = 0
             for topic in topics_result['topics']:
@@ -336,7 +337,7 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
                     # Pass the clean 'topic' and 'channel' separately to the YouTube API wrapper
                     channel_videos = await fetch_videos_for_topic_and_channel(
                         topic=topic,
-                        channel_handle=channel,
+                        channel_id=channel,
                         limit=per_channel_limit)
 
                     for video in channel_videos:
@@ -513,7 +514,7 @@ async def find_relevant_moment(token: str, video_id: str) -> dict:
     """Instructor opt-in: find the transcript moment most relevant to a
     video's skill, and store it as a deep-link timestamp."""
     try:
-        user, error = await _require_instructor(token)
+        user, error = await require_instructor(token)
         if error:
             return error
 
@@ -521,7 +522,7 @@ async def find_relevant_moment(token: str, video_id: str) -> dict:
         if not video:
             return {'error': 'Video not found', 'statusCode': 404}
 
-        _, error = await require_course_instructor(token, video['course_id'])
+        error = await check_course_instructor(user, video['course_id'])
         if error:
             return error
 

@@ -244,7 +244,7 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
                     return {
                         'valid': False,
                         'statusCode': 403,
-                        'message': 'Invalid Canvas API token. Please check your token and try again.'
+                        'message': f'Course {course_id} was not found in Canvas.'
                     }
                 if enrollments_response.status != 200:
                     error_text = await enrollments_response.text()
