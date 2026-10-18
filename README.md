@@ -1,48 +1,35 @@
-# KnowGap - Course Video Recommendations & Student Risk Prediction
+# KnowGap Backend (AchieveUp API)
 
 ## Overview
 
-**KnowGap** is an intelligent platform designed to enhance student learning and course management. It combines student performance prediction with personalized video recommendations to improve understanding of incorrectly answered quiz questions. The platform integrates with learning management systems like Canvas to monitor student progress and provide instructors with critical insights, while helping students close knowledge gaps through targeted video recommendations.
+This backend powers **AchieveUp**, the web app where instructors build skill matrices for their Canvas courses and map quiz questions to skills, and students track their skill mastery and earn badges.
 
-This backend also powers **AchieveUp**, the companion web app where instructors build skill matrices for their Canvas courses and map quiz questions to skills, and students track their skill mastery and earn badges.
+The project and its database keep the **KnowGap** name from the original KnowGap Chrome extension, which has been retired. The extension's routes and services were removed from this backend.
 
 ## Features
 
-1. **Student Risk Prediction**
-   - Identifies students at risk of underperforming or failing based on quiz performance and other course metrics.
-   - Offers insights to instructors, enabling timely intervention to help students succeed.
+1. **Integration with Canvas**
+   - Uses course and quiz data from Canvas (both Classic Quizzes and New Quizzes) to calculate student skill mastery.
+   - Runs a background sync on startup and every 10 minutes (`Config.SET_TIMER`) that pulls quiz questions and updates student skill mastery for every course taught by an AchieveUp instructor.
 
-2. **Curated Video Recommendations**
-   - Automatically generates personalized video recommendations for quiz questions that students answer incorrectly.
-   - Leverages predefined or dynamically generated core topics for each question.
-   - Stores new video data in the system, ensuring future reuse without redundant lookups.
-
-3. **Integration with Canvas**
-   - Uses course and quiz data from Canvas (both Classic Quizzes and New Quizzes) to monitor student performance.
-   - Tracks quiz results and triggers video recommendations based on incorrect answers.
-   - Runs a background sync on startup and every 10 minutes (`Config.SET_TIMER`) that pulls quiz data, refreshes videos, and updates student skill mastery for every connected course.
-
-4. **Caching and Storing Results**
-   - Caches dynamically generated core topics and videos, reducing the need for repeated API calls or queries.
-
-5. **Skill Matrices and Skill Assignment (AchieveUp)**
+2. **Skill Matrices and Skill Assignment (AchieveUp)**
    - Instructors create one or more skill matrices per course, with AI-suggested skills based on the course description.
    - Quiz questions are mapped to skills manually or with AI-assisted analysis, and matrices and assignments can be imported from another course.
 
-6. **Skill Mastery and Badges (AchieveUp)**
+3. **Skill Mastery and Badges (AchieveUp)**
    - Student mastery per skill is calculated from Canvas quiz submissions and awarded as tiered badges.
    - Students can share their earned badges through a public share link, or opt out of sharing.
 
-7. **Skill Video Curation (AchieveUp)**
+4. **Skill Video Curation (AchieveUp)**
    - Instructors curate YouTube videos per skill, add AI-suggested videos, and can jump to the most relevant moment of a video using its transcript.
    - Students vote on whether a video was helpful.
 
-8. **Instructor Analytics (AchieveUp)**
+5. **Instructor Analytics (AchieveUp)**
    - Course dashboard and per-student skill breakdowns, risk levels, and earned badges for each course an instructor teaches.
 
 ## Tech Stack
  
-The backend is a Python application built on the **Quart** framework (an async-capable counterpart to Flask), served in production via **Hypercorn**. Data is stored in **MongoDB**. Configuration is managed through environment variables loaded via `python-dotenv`. The companion frontend is a **React/TypeScript** single-page application, and the KnowGap **Chrome extension** runs inside Canvas. Both communicate with the backend over HTTP by calling its REST API.
+The backend is a Python application built on the **Quart** framework (an async-capable counterpart to Flask), served in production via **Hypercorn**. Data is stored in **MongoDB**. Configuration is managed through environment variables loaded via `python-dotenv`. The companion frontend is a **React/TypeScript** single-page application that communicates with the backend over HTTP by calling its REST API.
  
 ## Local Setup (Without Docker)
  
@@ -119,20 +106,16 @@ This stops and removes the containers but preserves MongoDB data in the named `m
 The backend is organized into modular subdirectories to keep the codebase maintainable and scalable.
 
 ### 1. `routes/`
-Defines the API endpoints, organized by feature area: `base_routes.py`, `auth_routes.py`, `user_routes.py`, `course_routes.py`, `video_routes.py`, `support_routes.py`, `canvas_routes.py`, `achieveup_routes.py`, and `skill_video_routes.py`. Each route file registers its endpoints with the main app instance in `app.py`. See `routes/README.md` for the full list of endpoints.
+Defines the API endpoints, organized by feature area: `base_routes.py`, `auth_routes.py`, `canvas_routes.py`, `achieveup_routes.py`, and `skill_video_routes.py`. Each route file registers its endpoints with the main app instance in `app.py`. See `routes/README.md` for the full list of endpoints.
 
 ### 2. `services/`
-Contains the core business logic and database interactions, separated from the routing layer. Key files include `video_service.py`, `course_service.py`, `user_service.py`, `support_service.py`, `badge_service.py`, `analytics_service.py`, `mastery_service.py`, `skill_video_service.py`, `canvas_submissions_service.py`, `skill_tiers.py`, and several `achieveup_*_service.py` files handling AI, auth, and Canvas-specific logic. See `services/README.md` for details.
+Contains the core business logic and database interactions, separated from the routing layer. Key files include `course_service.py`, `badge_service.py`, `analytics_service.py`, `mastery_service.py`, `skill_video_service.py`, `canvas_submissions_service.py`, `skill_tiers.py`, and several `achieveup_*_service.py` files handling AI, auth, and Canvas-specific logic. See `services/README.md` for details.
 
 ### 3. `utils/`
-Shared helper functions: `encryption_utils.py` (token encryption/decryption), `youtube_utils.py` (YouTube API helpers), `ai_utils.py` (AI-generated core topics and video search phrases), `course_utils.py` (Canvas course and quiz fetching), and `text_utils.py` (question text normalization and hashing).
+Shared helper functions: `encryption_utils.py` (token encryption/decryption), `youtube_utils.py` (YouTube API helpers), `ai_utils.py` (AI-generated video search phrases), `course_utils.py` (Canvas course and quiz fetching), and `text_utils.py` (question text normalization and hashing).
 
 ### 4. `tests/`
 Automated tests, written with `unittest`. Run them with `python -m unittest discover tests` from the backend folder (the same `.env` variables are required).
 
 ### Root files
 `app.py` creates the Quart app, registers all routes, creates MongoDB indexes, and starts the background sync. `config.py` holds configuration and collection names, and `mongodb.py` provides the shared MongoDB client used by every service.
-
-Current Student View          |  Current Instructor View
-:-------------------------:|:-------------------------:
-![](https://i.ibb.co/592pv8d/image-2024-10-26-204812751.png)| ![](https://i.ibb.co/hRjdT0R/demo.png)

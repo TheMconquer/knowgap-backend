@@ -32,7 +32,7 @@
 
 ## 6. Database Interaction
 - **MongoDB Connections**: Keep database connection settings centralized (e.g., in a `Config` or `.env` file) to avoid hardcoding sensitive information.
-- **Collections**: Access collections through variables to improve readability and maintainability (e.g., `db[Config.TOKENS_COLLECTION]`).
+- **Collections**: Access collections through variables to improve readability and maintainability (e.g., `db[Config.QUIZZES_COLLECTION]`).
 - **Upsert Operations**: When using `update_one` with `upsert=True`, clearly document the expected behavior.
 
 ## 7. Documentation
