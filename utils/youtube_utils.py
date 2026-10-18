@@ -234,32 +234,3 @@ async def fetch_video_transcript(video_id_or_url, languages=['en']):
             'success': False,
             'error': f'Failed to fetch transcript: {str(e)}'
         }
-
-
-async def enrich_video_with_transcript(video_data, fetch_transcript=False):
-    """
-    Optionally enriches video metadata with transcript data.
-    
-    Parameters:
-    - video_data (dict): Video metadata dictionary
-    - fetch_transcript (bool): Whether to fetch transcript
-    
-    Returns:
-    - dict: Video data with optional transcript fields
-    """
-    if not fetch_transcript or not video_data.get('link'):
-        return video_data
-    
-    video_url = video_data.get('link')
-    transcript_result = await fetch_video_transcript(video_url)
-    
-    if transcript_result.get('success'):
-        video_data['transcript'] = transcript_result.get('transcript')
-        video_data['transcript_text'] = transcript_result.get('transcript_text')
-        video_data['transcript_language'] = transcript_result.get('language')
-        video_data['transcript_fetched'] = True
-    else:
-        video_data['transcript_fetched'] = False
-        video_data['transcript_error'] = transcript_result.get('error')
-    
-    return video_data

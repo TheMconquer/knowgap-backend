@@ -69,7 +69,7 @@ class TestInstructorCoursesPagination(unittest.IsolatedAsyncioTestCase):
         second_response = FakeResponse(200, json_payload=second_page_courses)
         fake_session = FakeSession([first_response, second_response])
 
-        with patch.object(canvas_service.Config, 'ENABLE_DEMO_MODE', False), patch(
+        with patch(
             'services.achieveup_canvas_service.create_canvas_session',
             return_value=FakeSessionContext(fake_session),
         ):
@@ -88,7 +88,7 @@ class TestInstructorCoursesPagination(unittest.IsolatedAsyncioTestCase):
         error_response = FakeResponse(401, text_payload='Unauthorized')
         fake_session = FakeSession([error_response])
 
-        with patch.object(canvas_service.Config, 'ENABLE_DEMO_MODE', False), patch(
+        with patch(
             'services.achieveup_canvas_service.create_canvas_session',
             return_value=FakeSessionContext(fake_session),
         ):
