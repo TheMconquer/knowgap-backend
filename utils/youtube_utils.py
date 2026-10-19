@@ -39,11 +39,12 @@ def get_youtube_client():
     return _youtube_clients.client
 
 
-async def resolve_channel_id(channel_identifier: str) -> str | None:
+async def resolve_channel_id(channel_identifier: str) -> dict | None:
     """
     Resolves a channel handle (e.g., '@AmoebaSisters', '@crashcourse')
     or channel ID (starts with 'UC') to an ID YouTube confirms exists.
-    Returns None if there's no such channel; raises if the lookup fails.
+    Returns {'channel_id', 'name'}, or None if there's no such channel;
+    raises if the lookup fails.
     """
     clean_id = channel_identifier.strip()
 
@@ -60,14 +61,15 @@ async def resolve_channel_id(channel_identifier: str) -> str | None:
 
         def fetch_channel_id():
             return get_youtube_client().channels().list(
-                part='id',
+                part='id,snippet',
                 **lookup
             ).execute()
         response = await asyncio.to_thread(fetch_channel_id)
 
         items = response.get('items', [])
         if items:
-            return items[0]['id']
+            return {'channel_id': items[0]['id'],
+                    'name': items[0]['snippet']['title']}
 
         return None
 

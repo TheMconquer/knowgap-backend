@@ -194,10 +194,6 @@ async def validate_canvas_token(canvas_token: str, canvas_token_type: str = 'stu
 async def validate_canvas_instructor_for_course(canvas_token: str, course_id: str) -> dict:
     """Validate Instructor of a specific course"""
     try:
-        # Check if this is a demo token (only if demo mode is enabled)
-        if Config.ENABLE_DEMO_MODE and is_demo_token(canvas_token):
-            return await validate_demo_canvas_token(canvas_token, 'instructor')
-        
         headers = {
             'Authorization': f'Bearer {canvas_token}',
             'Content-Type': 'application/json'
@@ -222,7 +218,7 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
                         'message': f'Canvas API returned error {response.status}. Please try again later.'
                     }
                 user_data = await response.json()
-        
+
         # Check if user is instructor for the specified course
         user_id = user_data.get('id')
         enrollments_url = f"{CANVAS_API_URL}/courses/{course_id}/enrollments"
@@ -255,7 +251,7 @@ async def validate_canvas_instructor_for_course(canvas_token: str, course_id: st
                         'message': f'Canvas API returned error {enrollments_response.status}. Please try again later.'
                     }
                 enrollments_data = await enrollments_response.json()
-            
+
             #check if instructor level enrollment is active
             if not enrollments_data or len(enrollments_data) == 0:
                 return {

@@ -1425,8 +1425,8 @@ async def get_saved_course_channels(course_id: str, instructor_id: str):
 async def get_course_channels(token: str, course_id: str) -> list | dict:
     """
     Fetch configured YouTube channels for a given course ID.
-    Returns a list of channel handles/IDs (empty if none are saved), or an
-    error dict if the user can't access the course.
+    Returns a list of {'channel_id', 'name'} dicts (empty if none are
+    saved), or an error dict if the user can't access the course.
     """
     try:
         user, error = await require_course_instructor(token, course_id)
@@ -1475,11 +1475,11 @@ async def update_course_channels(token: str, course_id: str, channels: list):
         not_found = []
         try:
             for c in clean_channels:
-                channel_id = await resolve_channel_id(c)
-                if not channel_id:
+                channel = await resolve_channel_id(c)
+                if not channel:
                     not_found.append(c)
-                elif channel_id not in saved_channels:
-                    saved_channels.append(channel_id)
+                elif channel not in saved_channels:
+                    saved_channels.append(channel)
         except Exception:
             return {
                 'error': 'YouTube unavailable',

@@ -315,8 +315,9 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
         # A. Get instructor-configured preferred channels for this course.
         # A plain database read, so a missing Canvas token or a Canvas outage
         # doesn't block generation.
-        configured_channels = await get_saved_course_channels(
-            course_id, user['id'])
+        configured_channels = [
+            c['channel_id'] for c in
+            await get_saved_course_channels(course_id, user['id'])]
 
         # B. Priority Pass: Search using configured channel handles first
         if configured_channels:
