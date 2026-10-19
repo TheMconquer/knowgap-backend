@@ -10,6 +10,7 @@ from services.achieveup_auth_service import (
     achieveup_verify_token,
     get_user_canvas_token,
     require_instructor,
+    check_course_instructor
 )
 from services.achieveup_service import (
     achieveup_question_skills_collection,
@@ -262,7 +263,7 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
     a separate instructor-approval step.
     """
     try:
-        user, error = await require_instructor(token)
+        user, error = await require_course_instructor(token, course_id)
         if error:
             return error
 
