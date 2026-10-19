@@ -17,7 +17,8 @@ from services.achieveup_service import (
     achieveup_skill_matrices_collection,
     achieveup_course_descriptions_collection,
     get_saved_course_channels,
-    check_course_instructor
+    check_course_instructor,
+    require_course_instructor
 )
 from utils.ai_utils import generate_skill_search_topics
 from utils.youtube_utils import fetch_videos_for_topic, get_video_metadata, fetch_video_transcript, fetch_videos_for_topic_and_channel
