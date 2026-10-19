@@ -22,56 +22,6 @@ def clean_metadata_text(text: str) -> str:
     """
     return html.unescape(text)
 
-async def fetch_video_for_topic(topic):
-    """
-    Fetch a single video for a given topic from YouTube.
-    
-    Parameters:
-    - topic (str): The topic to search for.
-
-    Returns:
-    - dict: A dictionary containing video metadata (title, link, channel, thumbnail),
-            or an empty dictionary if no video is found.
-    """
-    try:
-        # Start the search
-        logging.debug(f"Starting search for topic: {topic}")
-        search = VideosSearch(topic, limit=1)
-        
-        # Fetch search results
-        search_results = search.result()
-        logging.debug(f"Raw search results for topic '{topic}': {search_results}")
-        
-        # Parse the search results
-        results = search_results.get('result', [])
-        
-        if not results:
-            logging.warning(f"No results found for topic '{topic}'")
-            return {}
-
-        # Extract video details from the first result
-        video = results[0]  
-        
-        # Ensure video data contains expected keys
-        video_data = {
-            'title': clean_metadata_text(video.get('title', 'No Title Found')),
-            'link': video.get('link', 'No Link Found'),
-            'channel': video.get('channel', {}).get('name', 'No Channel Found'),
-            'thumbnail': video.get('thumbnails', [{}])[0].get('url', 'No Thumbnail Found')
-        }
-        
-        logging.debug(f"Extracted video data for topic '{topic}': {video_data}")
-        return video_data
-
-    except Exception as e:
-        logging.error(f"Error fetching videos for topic '{topic}': {e}")
-        return {}
-    
-
-
-
-
-
 
 async def fetch_videos_for_topic(topic, limit=3):
     """
@@ -234,32 +184,3 @@ async def fetch_video_transcript(video_id_or_url, languages=['en']):
             'success': False,
             'error': f'Failed to fetch transcript: {str(e)}'
         }
-
-
-async def enrich_video_with_transcript(video_data, fetch_transcript=False):
-    """
-    Optionally enriches video metadata with transcript data.
-    
-    Parameters:
-    - video_data (dict): Video metadata dictionary
-    - fetch_transcript (bool): Whether to fetch transcript
-    
-    Returns:
-    - dict: Video data with optional transcript fields
-    """
-    if not fetch_transcript or not video_data.get('link'):
-        return video_data
-    
-    video_url = video_data.get('link')
-    transcript_result = await fetch_video_transcript(video_url)
-    
-    if transcript_result.get('success'):
-        video_data['transcript'] = transcript_result.get('transcript')
-        video_data['transcript_text'] = transcript_result.get('transcript_text')
-        video_data['transcript_language'] = transcript_result.get('language')
-        video_data['transcript_fetched'] = True
-    else:
-        video_data['transcript_fetched'] = False
-        video_data['transcript_error'] = transcript_result.get('error')
-    
-    return video_data

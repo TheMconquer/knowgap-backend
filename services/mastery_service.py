@@ -4,7 +4,6 @@ import logging
 from datetime import datetime, timezone
 from config import Config
 from mongodb import get_db
-from services.badge_service import generate_badges_for_user
 from utils.text_utils import normalize_text, hash_text
 
 # Set up logging

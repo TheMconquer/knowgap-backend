@@ -24,15 +24,6 @@ JWT_SECRET = getattr(Config, 'ACHIEVEUP_JWT_SECRET', 'achieveup-secret-key-chang
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 24
 
-async def hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed.decode('utf-8')
-
-async def verify_password(password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 def create_jwt_token(user_id: str, email: str, role: str, canvas_token_type: str = 'student') -> str:
     """Create a JWT token for a user with Canvas token type."""
@@ -47,34 +38,6 @@ def create_jwt_token(user_id: str, email: str, role: str, canvas_token_type: str
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token
 
-def generate_jwt_token(user_id: str) -> str:
-    """Generate a new JWT token for token refresh."""
-    
-    async def get_user_info():
-        users_collection = db[Config.ACHIEVEUP_USERS_COLLECTION]
-        user = await users_collection.find_one({'user_id': user_id})
-        return user
-    
-    import asyncio
-    user = asyncio.run(get_user_info())
-    if user:
-        return create_jwt_token(
-            user['user_id'], 
-            user['email'], 
-            user['role'], 
-            user.get('canvas_token_type', 'student')
-        )
-    return None
-
-async def verify_jwt_token(token: str) -> dict:
-    """Verify and decode a JWT token."""
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise ValueError("Token has expired")
-    except jwt.InvalidTokenError:
-        raise ValueError("Invalid token")
 
 def password_meets_requirements(password: str) -> str | None:
     """Function to validate a password is at least 8 characters and contains a number, lowercase and capital letter."""
@@ -133,7 +96,7 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
         # try instructor first; a real teaching-enrolled token should grant
         # instructor access automatically, no hint needed. Fall back to
         # confirming it's at least a valid student token; reject otherwise.
-        from services.achieveup_canvas_service import validate_canvas_token
+        from services.achieveup_canvas_service import validate_canvas_token, get_token_expiration
 
         instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
         if instructor_check['valid']:
@@ -177,6 +140,11 @@ async def achieveup_signup(name: str, email: str, password: str, canvas_api_toke
         user_doc['canvas_api_token'] = encrypted_token
         user_doc['canvas_token_created_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
         user_doc['canvas_token_last_validated'] = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Get the expiration date for the token.
+        expiration_status, expiration_date = await get_token_expiration(canvas_api_token)
+        if expiration_status == 200:
+            user_doc["canvas_token_expiration"] = expiration_date
 
         # Insert user into database. A DuplicateKeyError here means another
         # request won the race between the find_one check above and this
@@ -291,6 +259,18 @@ async def achieveup_verify_token(token: str) -> dict:
                 'statusCode': 404
             }
         
+        token_expiration = user.get("canvas_token_expiration")
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        if token_expiration is None:
+            token_status = 'Valid'
+        elif token_expiration <= now:
+            token_status = 'Expired'
+        elif token_expiration <= now + timedelta(days=7):
+            token_status = 'Expiring Soon'
+        else:
+            token_status = 'Valid'
+
         # Return user info (without password and Canvas token)
         user_info = {
             'id': user['user_id'],
@@ -300,7 +280,9 @@ async def achieveup_verify_token(token: str) -> dict:
             'hasCanvasToken': bool(user.get('canvas_api_token')),
             'canvasTokenType': user.get('canvas_token_type', 'student'),
             'canvas_student_id': user.get('canvas_student_id'),
-            'has_student_access': user.get('has_student_access', False)
+            'has_student_access': user.get('has_student_access', False),
+            "canvasTokenExpiresAt": token_expiration.isoformat() if token_expiration else None,
+            "canvasTokenStatus": token_status
         }
 
         return {'user': user_info}
@@ -321,9 +303,6 @@ async def achieveup_verify_token(token: str) -> dict:
         logger.error(f"Token verification error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def achieveup_get_user_info(token: str) -> dict:
-    """Get user information from token."""
-    return await achieveup_verify_token(token)
 
 async def achieveup_update_profile(token: str, name: str, email: str, canvas_api_token: str = None, canvas_token_type: str = None) -> dict:
     """Update user profile information including Canvas API token."""
@@ -366,7 +345,7 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             # same instructor-first-then-student-fallback pattern as signup, so a
             # student can't hand-craft a request claiming canvasTokenType=instructor
             # to get promoted on a token that was never actually verified as one.
-            from services.achieveup_canvas_service import validate_canvas_token
+            from services.achieveup_canvas_service import validate_canvas_token, get_token_expiration
 
             instructor_check = await validate_canvas_token(canvas_api_token, 'instructor')
             if instructor_check['valid']:
@@ -396,6 +375,12 @@ async def achieveup_update_profile(token: str, name: str, email: str, canvas_api
             update_data['role'] = token_type
             update_data['canvas_student_id'] = validated_check.get('user_info', {}).get('id')
             update_data['has_student_access'] = has_student_access
+
+            expiration_status, expiration_date = await get_token_expiration(canvas_api_token)
+            if expiration_status == 200:
+                update_data["canvas_token_expiration"] = expiration_date
+            else:
+                await achieveup_users_collection.update_one({'user_id': user_id}, {'$unset': {'canvas_token_expiration': ''}})
 
 
         # Update user in database
@@ -493,54 +478,3 @@ async def get_user_canvas_token(user_id: str) -> str:
     except Exception as e:
         logger.error(f"Error getting Canvas token: {str(e)}")
         return None
-
-def require_instructor_role(func):
-    """Decorator to require instructor role for endpoints."""
-    async def wrapper(*args, **kwargs):
-        try:
-            # Extract token from request headers
-            from quart import request
-            auth_header = request.headers.get('Authorization')
-            if not auth_header or not auth_header.startswith('Bearer '):
-                return {
-                    'error': 'Missing token',
-                    'message': 'Authorization header with Bearer token is required',
-                    'statusCode': 401
-                }, 401
-            
-            token = auth_header.split(' ')[1]
-            
-            # Verify token
-            user_result = await achieveup_verify_token(token)
-            if 'error' in user_result:
-                return user_result, user_result['statusCode']
-            
-            # Check role and canvas token type
-            user = user_result['user']
-            if user['role'] != 'instructor':
-                return {
-                    'error': 'Insufficient permissions',
-                    'message': 'Instructor role required',
-                    'statusCode': 403
-                }, 403
-            
-            if user['canvasTokenType'] != 'instructor':
-                return {
-                    'error': 'Invalid Canvas token type',
-                    'message': 'Instructor Canvas token required',
-                    'statusCode': 403
-                }, 403
-            
-            # Add user info to function kwargs
-            kwargs['current_user'] = user
-            return await func(*args, **kwargs)
-            
-        except Exception as e:
-            logger.error(f"Role validation error: {str(e)}")
-            return {
-                'error': 'Internal server error',
-                'message': 'Authorization check failed',
-                'statusCode': 500
-            }, 500
-    
-    return wrapper 
