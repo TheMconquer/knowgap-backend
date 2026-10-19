@@ -19,23 +19,6 @@ from services.achieveup_canvas_service import (
     validate_canvas_instructor_for_course,
 )
 
-def normalize_quiz_title(title: str) -> str:
-    if not title:
-        return ''
-    return re.sub(r'\s+', ' ', title).strip().lower()
-
-def strip_html(text: str) -> str:
-    if not text:
-        return ''
-    text = re.sub(r'<[^>]+>', ' ', text)
-    return unescape(text)
-
-def normalize_question_text(text: str) -> str:
-    text = strip_html(text)
-    text = text.lower()
-    text = re.sub(r'[^\w\s]', '', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -46,9 +29,7 @@ db = get_db()
 # Collections
 achieveup_skill_matrices_collection = db[Config.ACHIEVEUP_SKILL_MATRICES_COLLECTION]
 achieveup_question_skills_collection = db[Config.ACHIEVEUP_QUESTION_SKILLS_COLLECTION]
-achieveup_badges_collection = db[Config.ACHIEVEUP_BADGES_COLLECTION]
 achieveup_progress_collection = db[Config.ACHIEVEUP_PROGRESS_COLLECTION]
-achieveup_analytics_collection = db[Config.ACHIEVEUP_ANALYTICS_COLLECTION]
 achieveup_course_descriptions_collection = db[Config.ACHIEVEUP_COURSE_DESCRIPTIONS_COLLECTION]
 achieveup_import_status_collection = db[Config.ACHIEVEUP_IMPORT_STATUS_COLLECTION]
 achieveup_course_channels_collection = db[Config.ACHIEVEUP_COURSE_CHANNELS_COLLECTION]
@@ -144,28 +125,6 @@ async def update_skill_matrix(token: str, matrix_id: str, skills: list, matrix_n
         logger.error(f"Update skill matrix error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def get_skill_matrix(token: str, course_id: str) -> dict:
-    """Get skill matrix for a course."""
-    try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        # Find matrix
-        matrix = await achieveup_skill_matrices_collection.find_one({'course_id': course_id})
-        if not matrix:
-            return {
-                'error': 'Matrix not found',
-                'message': 'No skill matrix found for this course',
-                'statusCode': 404
-            }
-        
-        return matrix
-        
-    except Exception as e:
-        logger.error(f"Get skill matrix error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
 
 async def get_all_skill_matrices_by_course(token: str, course_id: str) -> dict:
     """Get ALL skill matrices for a course (for frontend matrix selection)."""
@@ -425,70 +384,6 @@ async def get_assigned_skills(token: str, course_id: str, question_ids:list[str]
         logger.error(f"Get assigned skills error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def generate_badges_for_student(token: str, student_id: str, course_id: str, skill_levels: dict) -> dict:
-    """Generate badges for a student based on skill levels."""
-    try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        badges = []
-        
-        # Generate badges based on skill levels
-        for skill_name, level in skill_levels.items():
-            if level in ['beginner', 'intermediate', 'advanced']:
-                badge_id = str(uuid.uuid4())
-                
-                # Determine badge type based on level
-                if level == 'advanced':
-                    badge_type = 'skill_master'
-                    description = f"Mastered {skill_name}"
-                elif level == 'intermediate':
-                    badge_type = 'consistent_learner'
-                    description = f"Consistent progress in {skill_name}"
-                else:
-                    badge_type = 'quick_learner'
-                    description = f"Started learning {skill_name}"
-                
-                badge_doc = {
-                    '_id': badge_id,
-                    'student_id': student_id,
-                    'course_id': course_id,
-                    'skill': skill_name,
-                    'badge_type': badge_type,
-                    'description': description,
-                    'earned_at': datetime.now(timezone.utc).replace(tzinfo=None),
-                    'level': level
-                }
-                
-                # Insert badge
-                await achieveup_badges_collection.insert_one(badge_doc)
-                badges.append(badge_doc)
-        
-        return badges
-        
-    except Exception as e:
-        logger.error(f"Generate badges error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
-async def get_student_badges(token: str, student_id: str) -> dict:
-    """Get badges for a student."""
-    try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        # Find badges
-        cursor = achieveup_badges_collection.find({'student_id': student_id})
-        badges = await cursor.to_list(length=None)
-        
-        return badges
-        
-    except Exception as e:
-        logger.error(f"Get student badges error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
 
 async def get_student_progress(token: str, student_id: str, course_id: str) -> dict:
     """Get skill progress for a student in a course."""
@@ -525,256 +420,6 @@ async def get_student_progress(token: str, student_id: str, course_id: str) -> d
         logger.error(f"Get student progress error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
 
-async def update_student_progress(token: str, student_id: str, course_id: str, skill_updates: dict) -> dict:
-    """Update skill progress for a student in a course."""
-    try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        # Get current progress
-        current_progress = await achieveup_progress_collection.find_one({
-            'student_id': student_id,
-            'course_id': course_id
-        })
-        
-        if current_progress:
-            skill_progress = current_progress.get('skill_progress', {})
-        else:
-            skill_progress = {}
-        
-        # Update skill progress
-        for skill_name, update_data in skill_updates.items():
-            score = update_data.get('score', 0)
-            notes = update_data.get('notes', '')
-            
-            # Determine level based on score
-            if score >= 80:
-                level = 'advanced'
-            elif score >= 60:
-                level = 'intermediate'
-            else:
-                level = 'beginner'
-            
-            skill_progress[skill_name] = {
-                'score': score,
-                'level': level,
-                'total_questions': skill_progress.get(skill_name, {}).get('total_questions', 0) + 1,
-                'correct_answers': skill_progress.get(skill_name, {}).get('correct_answers', 0) + (1 if score >= 60 else 0),
-                'notes': notes
-            }
-        
-        # Update or insert progress
-        progress_doc = {
-            'student_id': student_id,
-            'course_id': course_id,
-            'skill_progress': skill_progress,
-            'last_updated': datetime.now(timezone.utc).replace(tzinfo=None)
-        }
-        
-        await achieveup_progress_collection.update_one(
-            {'student_id': student_id, 'course_id': course_id},
-            {'$set': progress_doc},
-            upsert=True
-        )
-        
-        return progress_doc
-        
-    except Exception as e:
-        logger.error(f"Update student progress error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
-async def get_individual_analytics(token: str, student_id: str) -> dict:
-    """Get analytics data for a student."""
-    try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        # Get student progress data
-        cursor = achieveup_progress_collection.find({'student_id': student_id})
-        progress_data = await cursor.to_list(length=None)
-        
-        # Generate analytics
-        analytics = {
-            'timeSeriesData': [],
-            'performance': [],
-            'distribution': [],
-            'trends': [],
-            'radar': []
-        }
-        
-        # Process progress data for analytics
-        for progress in progress_data:
-            for skill_name, skill_data in progress.get('skill_progress', {}).items():
-                analytics['performance'].append({
-                    'skill': skill_name,
-                    'score': skill_data.get('score', 0),
-                    'level': skill_data.get('level', 'beginner'),
-                    'course_id': progress['course_id']
-                })
-        
-        return analytics
-        
-    except Exception as e:
-        logger.error(f"Get individual analytics error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
-async def export_course_data(token: str, course_id: str) -> dict:
-    """Export course data (CSV format)."""
-    try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        # Collect all course data
-        course_data = {
-            'skill_matrices': [],
-            'badges': [],
-            'skill_progress': []
-        }
-        
-        # Get skill matrix
-        matrix = await achieveup_skill_matrices_collection.find_one({'course_id': course_id})
-        if matrix:
-            course_data['skill_matrices'].append(matrix)
-        
-        # Get badges
-        cursor = achieveup_badges_collection.find({'course_id': course_id})
-        course_data['badges'] = await cursor.to_list(length=None)
-        
-        # Get progress
-        cursor = achieveup_progress_collection.find({'course_id': course_id})
-        course_data['skill_progress'] = await cursor.to_list(length=None)
-        
-        return course_data
-        
-    except Exception as e:
-        logger.error(f"Export course data error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
-async def import_course_data(token: str, course_id: str, import_data: dict) -> dict:
-    """Import course data."""
-    try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
-        # Import skill matrices
-        for matrix in import_data.get('skill_matrices', []):
-            matrix['course_id'] = course_id
-            matrix['_id'] = str(uuid.uuid4())
-            matrix['created_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
-            matrix['updated_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
-            await achieveup_skill_matrices_collection.insert_one(matrix)
-        
-        # Import badges
-        for badge in import_data.get('badges', []):
-            badge['course_id'] = course_id
-            badge['_id'] = str(uuid.uuid4())
-            badge['earned_at'] = datetime.now(timezone.utc).replace(tzinfo=None)
-            await achieveup_badges_collection.insert_one(badge)
-        
-        # Import progress
-        for progress in import_data.get('skill_progress', []):
-            progress['course_id'] = course_id
-            progress['last_updated'] = datetime.now(timezone.utc).replace(tzinfo=None)
-            await achieveup_progress_collection.insert_one(progress)
-        
-        return {'message': 'Course data imported successfully'}
-        
-    except Exception as e:
-        logger.error(f"Import course data error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
-async def create_instructor_skill_matrix(token: str, course_id: str, matrix_name: str, skills: list, quiz_questions: dict) -> dict:
-    """Create skill matrix with quiz question mapping for instructor."""
-    try:
-        # Verify user token and instructor status
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        user_id = user_result['user']['id']
-
-        user_doc = await db['AchieveUp_Users'].find_one({'user_id': user_id})
-        if not user_doc or user_doc.get('canvas_token_type', 'student') != 'instructor':
-            return {'error': 'Forbidden', 'message': 'Instructor token required', 'statusCode': 403}
-        # Create matrix document
-        matrix_id = str(uuid.uuid4())
-        matrix_doc = {
-            '_id': matrix_id,
-            'course_id': course_id,
-            'matrix_name': matrix_name,
-            'skills': skills,
-            'quiz_questions': quiz_questions,
-            'created_at': datetime.now(timezone.utc).replace(tzinfo=None),
-            'updated_at': datetime.now(timezone.utc).replace(tzinfo=None),
-            'created_by': user_id
-        }
-        await db['AchieveUp_Skill_Matrices'].insert_one(matrix_doc)
-        return matrix_doc
-    except Exception as e:
-        logger.error(f"Create instructor skill matrix error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-
-async def get_instructor_course_analytics(token: str, course_id: str) -> dict:
-    """Get detailed analytics for instructor's course."""
-    try:
-        # Verify user token and instructor status
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        user_id = user_result['user']['id']
-
-        user_doc = await db['AchieveUp_Users'].find_one({'user_id': user_id})
-        if not user_doc or user_doc.get('canvas_token_type', 'student') != 'instructor':
-            return {'error': 'Forbidden', 'message': 'Instructor token required', 'statusCode': 403}
-        # Gather analytics data
-        # Example: count students, average progress, skill distribution, risk students, top performers
-        progress_cursor = db['AchieveUp_Progress'].find({'course_id': course_id})
-        students = []
-        skill_distribution = {}
-        total_progress = 0
-        total_students = 0
-        risk_students = []
-        top_performers = []
-        async for doc in progress_cursor:
-            students.append(doc['student_id'])
-            total_students += 1
-            # Calculate average progress (simple mean of all skill scores)
-            if 'skill_progress' in doc:
-                avg_score = sum([v['score'] for v in doc['skill_progress'].values()]) / max(len(doc['skill_progress']), 1)
-                total_progress += avg_score
-                # Skill distribution
-                for skill, v in doc['skill_progress'].items():
-                    skill_distribution.setdefault(skill, []).append(v['score'])
-                # Risk students (example: avg_score < 50)
-                if avg_score < 50:
-                    risk_students.append(doc['student_id'])
-                # Top performers (example: avg_score > 90)
-                if avg_score > 90:
-                    top_performers.append(doc['student_id'])
-        average_progress = total_progress / max(total_students, 1)
-        # Aggregate skill distribution
-        skill_dist_summary = {k: sum(v)/len(v) if v else 0 for k, v in skill_distribution.items()}
-        analytics = {
-            'course_id': course_id,
-            'total_students': total_students,
-            'average_progress': average_progress,
-            'skill_distribution': skill_dist_summary,
-            'risk_students': risk_students,
-            'top_performers': top_performers
-        }
-        return analytics
-    except Exception as e:
-        logger.error(f"Get instructor course analytics error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
-    
-   
 
 async def get_instructor_dashboard(token: str) -> dict:
     """Get instructor dashboard data with course overview and analytics."""
@@ -954,42 +599,6 @@ async def suggest_course_skills_ai(token: str, course_data: dict) -> dict:
         import traceback
         traceback.print_exc()
         return {'error': 'Internal server error', 'message': str(e), 'statusCode': 500}
-    
-async def get_all_skills_for_course(token: str, course_id: str) -> dict:
-    """Get a deduplicated list of all skills from all matrices in a course."""
-    try:
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-
-        # Reuse your existing service that fetches all matrices
-        matrices_result = await get_all_skill_matrices_by_course(token, course_id)
-        if 'error' in matrices_result:
-            return matrices_result
-
-        matrices = matrices_result.get('matrices', [])
-
-        # Collect + dedupe skills while preserving order
-        seen = set()
-        all_skills: list[str] = []
-
-        for matrix in matrices:
-            skills = matrix.get('skills', []) or []
-            for s in skills:
-                if s and s not in seen:
-                    seen.add(s)
-                    all_skills.append(s)
-
-        return {
-            'course_id': course_id,
-            'matrix_count': len(matrices),
-            'skill_count': len(all_skills),
-            'skills': all_skills
-        }
-
-    except Exception as e:
-        logger.error(f"Get all skills for course error: {str(e)}")
-        return {'error': 'Internal server error', 'statusCode': 500}
 
 
 async def analyze_questions_with_ai(token: str, questions: list, course_id: str, matrix_id: str = None) -> dict:
@@ -1023,28 +632,6 @@ async def analyze_questions_with_ai(token: str, questions: list, course_id: str,
                 course_skills = matrix['skills']
                 matrix_used = matrix.get('matrix_name', 'default')
                 logger.info(f"Using first matrix '{matrix_used}' with {len(course_skills)} skills")
-        
-        # Priority 3: Extract course_id from demo questions (only if demo mode is enabled)
-        if not course_skills and Config.ENABLE_DEMO_MODE:
-            logger.info("Attempting to detect course from question IDs (demo mode)")
-            for question in questions:
-                q_id = question.get('id', '')
-                if 'demo_001' in q_id:
-                    course_id = 'demo_001'
-                    break
-                elif 'demo_002' in q_id:
-                    course_id = 'demo_002'
-                    break
-                elif 'demo_003' in q_id:
-                    course_id = 'demo_003'
-                    break
-            
-            # Try again with detected course_id
-            if course_id:
-                matrix = await achieveup_skill_matrices_collection.find_one({'course_id': str(course_id)})
-                if matrix and 'skills' in matrix:
-                    course_skills = matrix['skills']
-                    matrix_used = matrix.get('matrix_name', 'demo')
         
         # If still no skills found, return error
         if not course_skills:

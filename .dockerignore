@@ -4,8 +4,5 @@ __pycache__
 demo.env
 tests
 *.md
-create_*.py
-create_demo*.py
-demo_data_generator.py
 test_*.py
 .DS_Store

@@ -1,25 +1,16 @@
 import logging
 import asyncio
-import os
 from quart import Quart, request
 from quart_cors import cors
 from dotenv import load_dotenv
 from utils.encryption_utils import decrypt_token
 
 from services.canvas_submissions_service import sync_course_submissions_direct
-from services.course_service import update_student_quiz_data, update_quiz_questions_per_course
-from services.video_service import update_course_videos
+from services.course_service import update_quiz_questions_per_course
 
 from routes.base_routes import init_base_routes
-from routes.user_routes import init_user_routes
-from routes.video_routes import init_video_routes
-from routes.support_routes import init_support_routes
-from routes.course_routes import init_course_routes
 from routes.auth_routes import auth_bp
 from routes.canvas_routes import canvas_bp
-from routes.badge_routes import badge_bp
-from routes.progress_routes import progress_bp
-from routes.analytics_routes import analytics_bp
 from routes.achieveup_routes import achieveup_bp
 from routes.skill_video_routes import skill_video_bp
 from mongodb import get_db
@@ -37,9 +28,6 @@ app = Quart(__name__)
 # Configure CORS
 app = cors(app, 
     allow_origin=[
-        "chrome-extension://*",  # Allow all Chrome extensions
-        "https://canvas.instructure.com",  # Allow Canvas
-        "https://webcourses.ucf.edu",  # Allow UCF Canvas
         "http://localhost:3000",  # Allow AchieveUp frontend development
         "http://localhost:5001",  # Allow local API testing
         "http://127.0.0.1:5001",  # Allow local API testing (IP)
@@ -57,7 +45,7 @@ app = cors(app,
 async def after_request(response):
     origin = request.headers.get("Origin")
     if origin:
-        # Allow only the requesting origin (Chrome extension or Canvas)
+        # Echo back the requesting origin
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
     else:
@@ -73,24 +61,15 @@ async def after_request(response):
 # Log incoming requests
 @app.before_request
 async def log_request():
-    print(f"Request headers: {dict(request.headers)}")
-    print(f"Request method: {request.method}")
-    print(f"Request path: {request.path}")
+    logger.info("%s %s", request.method, request.path)
 
 # Initialize routes first
 init_base_routes(app)
-init_user_routes(app)
-init_course_routes(app)
-init_video_routes(app)
-init_support_routes(app)
 
 # Register AchieveUp blueprints
 app.register_blueprint(auth_bp)
 app.register_blueprint(canvas_bp)
 app.register_blueprint(achieveup_bp)
-app.register_blueprint(badge_bp)
-app.register_blueprint(progress_bp)
-app.register_blueprint(analytics_bp)
 app.register_blueprint(skill_video_bp)
 
 # Apply CORS after routes are initialized
@@ -103,7 +82,6 @@ encryption_key = bytes.fromhex(HEX_ENCRYPTION_KEY)
 # Only bypass SSL verification in development
 db = get_db()
 
-token_collection = db[Config.TOKENS_COLLECTION]
 quizzes_collection = db[Config.QUIZZES_COLLECTION]
 
 # Create indexes
@@ -148,37 +126,7 @@ async def scheduled_update():
         await db.command('ping')
         logger.info("MongoDB connection successful")
         
-        # 1. Process Legacy Tokens
-        async for token in token_collection.find():
-            course_ids = token.get('course_ids')
-            authkey = Config.DB_CONNECTION_STRING
-            access_token = decrypt_token(encryption_key, token.get('auth'))
-            link = token.get('link', '').replace("https://", "").replace("http://", "")
-            logger.info("Processing legacy token with link: %s", link)
-
-            if all([course_ids, access_token, authkey, link]):
-                for course_id in course_ids:
-                    try:
-                        await update_student_quiz_data(course_id, access_token, link)
-                        await update_quiz_questions_per_course(course_id, access_token, link)
-                        await update_course_videos(course_id)
-                        
-                        # New: Update student mastery tracking (efficient sync)
-                        await sync_course_submissions_direct(access_token, course_id)
-                        
-                        logger.info("Processed course ID: %s", course_id)
-                    except Exception as course_error:
-                        logger.error("Error processing course ID %s: %s", course_id, course_error)
-                    
-                    # Rate limit safeguard: pause between courses
-                    await asyncio.sleep(1)
-            else:
-                logger.warning("Missing data for token processing: %s", token)
-            
-            # Rate limit safeguard: pause between legacy tokens
-            await asyncio.sleep(2)
-                
-        # 2. Process AchieveUp Users (Instructors with Canvas Tokens)
+        # Process AchieveUp Users (Instructors with Canvas Tokens)
         achieveup_users = db[Config.ACHIEVEUP_USERS_COLLECTION]
         link = "canvas.instructure.com" # Default link for AchieveUp users
         
@@ -196,13 +144,11 @@ async def scheduled_update():
                 if isinstance(courses, list):
                     for course in courses:
                         course_id = str(course.get('id'))
-                        logger.info("Processing AchieveUp course ID: %s for user %s", course_id, user.get('email'))
+                        logger.info("Processing AchieveUp course ID: %s for user_id %s", course_id, user.get('user_id'))
                         
                         try:
                             # Sync data
-                            await update_student_quiz_data(course_id, access_token, link)
                             await update_quiz_questions_per_course(course_id, access_token, link)
-                            await update_course_videos(course_id)
                             
                             # Update mastery
                             await sync_course_submissions_direct(access_token, course_id)
@@ -213,7 +159,7 @@ async def scheduled_update():
                         # Rate limit safeguard: pause between courses
                         await asyncio.sleep(1)
             except Exception as user_error:
-                logger.error("Error processing user %s: %s", user.get('email'), user_error)
+                logger.error("Error processing user_id %s: %s", user.get('user_id'), user_error)
             
             # Rate limit safeguard: pause between teachers
             await asyncio.sleep(2)
