@@ -612,7 +612,7 @@ def official_course_name(course: dict) -> str | None:
     the nickname in `name` and the real name in `original_name`."""
     return course.get('original_name') or course.get('name') or None
 
-async def get_course_name(canvas_token: str, course_id: str) -> str | None:
+async def get_canvas_course_name(canvas_token: str, course_id: str) -> str | None:
     """Fetch just a course's official name from Canvas (no syllabus or other includes)."""
     try:
         headers = {'Authorization': f'Bearer {canvas_token}'}

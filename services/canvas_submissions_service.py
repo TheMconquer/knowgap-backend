@@ -12,7 +12,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from services.achieveup_canvas_service import (
-    create_canvas_session, CANVAS_API_URL, is_new_quiz, get_instructor_course_quizzes, get_course_name
+    create_canvas_session, CANVAS_API_URL, is_new_quiz, get_instructor_course_quizzes, get_canvas_course_name
 )
 from services.skill_tiers import tier_for_score
 from config import Config
@@ -316,11 +316,12 @@ async def sync_course_submissions_direct(canvas_token: str, course_id: str, cour
         # Keep every matrix for this course on the current Canvas name (overwrites, so
         # renames in Canvas propagate), and hand it to badges awarded during this sync.
         if not course_name:
-            course_name = await get_course_name(canvas_token, course_id)
+            course_name = await get_canvas_course_name(canvas_token, course_id)
         if course_name:
             try:
                 await achieveup_skill_matrices_collection.update_many(
-                    course_id_filter(course_id), {'$set': {'course_name': course_name}}
+                    {**course_id_filter(course_id), 'course_name': {'$ne': course_name}},
+                    {'$set': {'course_name': course_name}}
                 )
             except Exception as e:
                 logger.error(f"Error saving course name to matrices for course {course_id}: {str(e)}")

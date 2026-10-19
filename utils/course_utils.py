@@ -118,8 +118,8 @@ async def get_quiz_questions(course_id, quiz_id, access_token, link):
 def course_id_filter(course_id) -> dict:
     """Mongo filter matching a course_id stored either as text or as a number."""
     values = [str(course_id)]
-    # isdecimal, not isdigit: isdigit accepts characters like "²" that int() rejects.
-    if str(course_id).isdecimal():
+    # ASCII digits only: isdigit accepts "²" (which int() rejects), and isdecimal accepts
+    # full-width digits like "１２" (which int() turns into 12).
+    if str(course_id).isascii() and str(course_id).isdecimal():
         values.append(int(course_id))
     return {'course_id': {'$in': values}}
-  

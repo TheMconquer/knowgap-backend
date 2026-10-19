@@ -47,7 +47,6 @@ async def create_skill_matrix(token: str, course_id: str, matrix_name: str, skil
                 'message': 'Instructor access required',
                 'statusCode': 403
             }
-        logger.info("#########################################")
         # Check if matrix name already exists for this course (allow multiple matrices per course)
         existing_matrix = await achieveup_skill_matrices_collection.find_one({
             'course_id': course_id, 
