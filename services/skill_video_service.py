@@ -319,7 +319,7 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
             c['channel_id'] for c in
             await get_saved_course_channels(course_id, user['id'])]
 
-        # B. Priority Pass: Search using configured channel handles first
+        # B. Priority Pass: Search using configured channel IDs first
         if configured_channels:
             logger.info(f"Prioritizing search across configured channels: {configured_channels}")
             # Calculate how many videos to request per channel

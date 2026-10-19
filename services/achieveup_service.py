@@ -14,7 +14,7 @@ import re
 from html import unescape
 
 from mongodb import get_db
-from utils.youtube_utils import resolve_channel_id
+from utils.youtube_utils import resolve_channel
 from services.achieveup_canvas_service import (
     validate_canvas_instructor_for_course,
 )
@@ -1460,13 +1460,6 @@ async def update_course_channels(token: str, course_id: str, channels: list):
         # Remove duplicates & whitespace
         clean_channels = list(dict.fromkeys(c.strip() for c in channels))
 
-        if len(clean_channels) > Config.MAX_COURSE_CHANNELS:
-            return {
-                'error': 'Too many channels',
-                'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
-                'statusCode': 400
-            }
-
         # Resolve each channel to its YouTube ID and drop entries that point
         # at a channel already listed (e.g. '@Foo', '@foo' or Foo's own ID).
         # If the lookup itself fails (quota, bad key, outage), say so rather
@@ -1475,11 +1468,18 @@ async def update_course_channels(token: str, course_id: str, channels: list):
         not_found = []
         try:
             for c in clean_channels:
-                channel = await resolve_channel_id(c)
+                channel = await resolve_channel(c)
                 if not channel:
                     not_found.append(c)
                 elif channel not in saved_channels:
                     saved_channels.append(channel)
+
+                    if len(saved_channels) > Config.MAX_COURSE_CHANNELS:
+                        return {
+                            'error': 'Too many channels',
+                            'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
+                            'statusCode': 400
+                        }
         except Exception:
             return {
                 'error': 'YouTube unavailable',
@@ -1489,6 +1489,8 @@ async def update_course_channels(token: str, course_id: str, channels: list):
             }
         if not_found:
             return {'error': 'Channel not found', 'message': f"Couldn't find these YouTube channels: {', '.join(not_found)}", 'statusCode': 400}
+
+
 
         await achieveup_course_channels_collection.update_one(
             {"course_id": str(course_id),
