@@ -1053,6 +1053,18 @@ async def update_course_channels(token: str, course_id: str, channels: list):
         # than "channel not found".
         saved_channels = []
         not_found = []
+
+        unique_channels: dict = {
+            channel.strip().lstrip('@').lower(): channel
+            for channel in channels}
+        if len(unique_channels) > Config.MAX_COURSE_CHANNELS:
+            return {
+                'error': 'Too many channels',
+                'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
+                'statusCode': 400
+            }
+
+
         try:
             for c in clean_channels:
                 channel = await resolve_channel(c)
@@ -1060,13 +1072,6 @@ async def update_course_channels(token: str, course_id: str, channels: list):
                     not_found.append(c)
                 elif channel not in saved_channels:
                     saved_channels.append(channel)
-
-                    if len(saved_channels) > Config.MAX_COURSE_CHANNELS:
-                        return {
-                            'error': 'Too many channels',
-                            'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
-                            'statusCode': 400
-                        }
         except Exception:
             return {
                 'error': 'YouTube unavailable',
