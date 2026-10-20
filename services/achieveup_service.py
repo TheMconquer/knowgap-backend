@@ -297,34 +297,34 @@ async def upsert_course_description(token: str, course_id: str, description: str
 async def assign_skills_to_questions(token: str, course_id: str, question_skills: dict) -> dict:
     """Assign skills to quiz questions."""
     try:
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
+        user, error = await require_course_instructor(token, course_id)
+        if error:
+            return error
 
-        # Retrieve user id to assign ownership to skill assignments
-        user_id = user_result['user']['id']
-
-        for question_text, skills in question_skills.items():
-            question_hash = text_utils.hash_text(question_text)
-
-            assignment_doc = {
-                'question_id': question_hash,
-                'owner_id': user_id,
-                'skills': skills,
-                'assigned_at': datetime.now(timezone.utc).replace(tzinfo=None)
-            }
-
-            await achieveup_question_skills_collection.update_one(
-                {'question_id': question_hash, 'owner_id': user_id},
-                {'$set': assignment_doc, '$addToSet': {'course_ids': course_id}},
-                upsert=True
-            )
-
+        await _save_question_skills(user['id'], course_id, question_skills)
         return {'message': 'Skills assigned successfully'}
 
     except Exception as e:
         logger.error(f"Assign skills error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500}
+
+async def _save_question_skills(user_id: str, course_id: str, question_skills: dict) -> None:
+    """Save question-to-skill mappings. No auth or Canvas checks, so callers do their own."""
+    for question_text, skills in question_skills.items():
+        question_hash = text_utils.hash_text(question_text)
+
+        assignment_doc = {
+            'question_id': question_hash,
+            'owner_id': user_id,
+            'skills': skills,
+            'assigned_at': datetime.now(timezone.utc).replace(tzinfo=None)
+        }
+
+        await achieveup_question_skills_collection.update_one(
+            {'question_id': question_hash, 'owner_id': user_id},
+            {'$set': assignment_doc, '$addToSet': {'course_ids': course_id}},
+            upsert=True
+        )
     
 async def get_assigned_skills(token: str, course_id: str, question_ids:list[str]) -> dict:
     """Get skill assigned for a quiz."""
@@ -757,17 +757,11 @@ def normalize_text(text: str) -> str:
 async def import_skill_setting_from_course(source_course_id: str, target_course_id: str, user_id: str, token: str):
     """Import question skill assignments from source course to target course by matching quiz names and question text."""
     try:
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-
-        user = user_result['user']
-        if user['role'] != 'instructor' or user.get('canvasTokenType') != 'instructor':
-            return {
-                'error': 'Access denied',
-                'message': 'Instructor access required',
-                'statusCode': 403
-            }
+        # Mappings are saved to the target, so the user must teach it now.
+        # Checked once here rather than on every quiz's save below.
+        user, error = await require_course_instructor(token, target_course_id)
+        if error:
+            return error
 
         from services.achieveup_auth_service import get_user_canvas_token
         from services.achieveup_canvas_service import get_instructor_quiz_questions, get_instructor_course_quizzes
@@ -879,14 +873,7 @@ async def import_skill_setting_from_course(source_course_id: str, target_course_
                 quiz_imported_count += 1
 
             if target_question_skills:
-                save_result = await assign_skills_to_questions(token, target_course_id, target_question_skills)
-                if 'error' in save_result:
-                    details.append({
-                        'quiz_title': source_quiz_title,
-                        'status': 'failed',
-                        'reason': save_result.get('message', save_result.get('error'))
-                    })
-                    continue
+                await _save_question_skills(user['id'], target_course_id, target_question_skills)
 
                 imported_count += len(target_question_skills)
                 matched_questions += quiz_imported_count
