@@ -31,8 +31,8 @@ app = cors(app,
         "http://localhost:3000",  # Allow AchieveUp frontend development
         "http://localhost:5001",  # Allow local API testing
         "http://127.0.0.1:5001",  # Allow local API testing (IP)
-        "https://achieveup.netlify.app",  # Allow AchieveUp frontend production
-        "https://achieveupapp.com"
+        Config.FRONTEND_URL,
+        Config.FRONTEND_HOSTING_URL
     ],
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -116,7 +116,7 @@ async def scheduled_update():
         
         # Process AchieveUp Users (Instructors with Canvas Tokens)
         achieveup_users = db[Config.ACHIEVEUP_USERS_COLLECTION]
-        link = "canvas.instructure.com" # Default link for AchieveUp users
+        link = Config.CANVAS_DOMAIN # Default link for AchieveUp users
         
         async for user in achieveup_users.find({"role": "instructor", "canvas_api_token": {"$exists": True, "$ne": None}}):
             try:
