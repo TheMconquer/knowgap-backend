@@ -26,6 +26,7 @@ async def update_student_mastery(submission_data: dict) -> None:
         student_id = submission_data.get('student_id')
         student_name = submission_data.get('student_name')
         course_id = submission_data.get('course_id')
+        course_name = submission_data.get('course_name')
         
         if not student_id or not course_id:
             logger.warning("Submission missing student_id or course_id, skipping mastery update")
@@ -157,13 +158,13 @@ async def update_student_mastery(submission_data: dict) -> None:
                     # The prompt asked for "efficiently ... award badges".
                     # Let's call a helper to check this specific skill badge.
                     
-                    await check_and_award_badge(student_id, course_id, skill_id, percentage, student_name)
+                    await check_and_award_badge(student_id, course_id, skill_id, percentage, student_name, course_name)
 
     except Exception as e:
         logger.error(f"Error updating student mastery: {str(e)}")
 
 
-async def check_and_award_badge(user_id: str, course_id: str, skill_id: str, percentage: float, student_name: str = None):
+async def check_and_award_badge(user_id: str, course_id: str, skill_id: str, percentage: float, student_name: str = None, course_name: str = None):
     """
     Check if a student earns a badge for a specific skill based on percentage.
     """
@@ -200,5 +201,5 @@ async def check_and_award_badge(user_id: str, course_id: str, skill_id: str, per
         # It's fine if we import inside the function.
         
         from services.badge_service import create_badge_for_student
-        await create_badge_for_student(user_id, course_id, skill_id, badge_level, percentage, student_name)
+        await create_badge_for_student(user_id, course_id, skill_id, badge_level, percentage, student_name, course_name)
 

@@ -270,7 +270,9 @@ async def generate_ai_video_recommendations(token: str, course_id: str, skill_na
         resolved_matrix_id = await _resolve_matrix_id(course_id, matrix_id, skill_name)
 
         matrix = await achieveup_skill_matrices_collection.find_one({'_id': resolved_matrix_id})
-        course_name = matrix.get('matrix_name', course_id) if matrix else course_id
+        # course_name is kept current by the submission sync; the matrix name is only a
+        # stand-in for the AI prompt on courses that haven't synced yet.
+        course_name = (matrix.get('course_name') or matrix.get('matrix_name') or course_id) if matrix else course_id
 
         # 1. Course context: instructor-entered description, fall back to live Canvas syllabus
         course_context = ''

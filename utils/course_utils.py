@@ -113,3 +113,13 @@ async def get_quiz_questions(course_id, quiz_id, access_token, link):
                 error_text = await response.text()
                 #print(f"Failed to fetch questions for quiz {quiz_id}. Status: {response.status}, Response: {error_text}")
                 raise Exception(f"Failed to fetch questions: {response.status} - {error_text}")
+
+
+def course_id_filter(course_id) -> dict:
+    """Mongo filter matching a course_id stored either as text or as a number."""
+    values = [str(course_id)]
+    # ASCII digits only: isdigit accepts "²" (which int() rejects), and isdecimal accepts
+    # full-width digits like "１２" (which int() turns into 12).
+    if str(course_id).isascii() and str(course_id).isdecimal():
+        values.append(int(course_id))
+    return {'course_id': {'$in': values}}
