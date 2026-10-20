@@ -1060,13 +1060,13 @@ async def update_course_channels(token: str, course_id: str, channels: list):
         if len(unique_channels) > Config.MAX_COURSE_CHANNELS:
             return {
                 'error': 'Too many channels',
-                'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
-                'statusCode': 400
-            }
+                    'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
+                    'statusCode': 400
+                }
 
 
         try:
-            for c in clean_channels:
+            for c in unique_channels.values():
                 channel = await resolve_channel(c)
                 if not channel:
                     not_found.append(c)

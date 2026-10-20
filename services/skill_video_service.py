@@ -9,8 +9,7 @@ from mongodb import get_db
 from services.achieveup_auth_service import (
     achieveup_verify_token,
     get_user_canvas_token,
-    require_instructor,
-    check_course_instructor
+    require_instructor
 )
 from services.achieveup_service import (
     achieveup_question_skills_collection,
