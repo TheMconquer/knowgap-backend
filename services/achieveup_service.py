@@ -1044,9 +1044,6 @@ async def update_course_channels(token: str, course_id: str, channels: list):
                 'statusCode': 400
             }
 
-        # Remove duplicates & whitespace
-        clean_channels = list(dict.fromkeys(c.strip() for c in channels))
-
         # Resolve each channel to its YouTube ID and drop entries that point
         # at a channel already listed (e.g. '@Foo', '@foo' or Foo's own ID).
         # If the lookup itself fails (quota, bad key, outage), say so rather
@@ -1055,15 +1052,14 @@ async def update_course_channels(token: str, course_id: str, channels: list):
         not_found = []
 
         unique_channels: dict = {
-            channel.strip().lstrip('@').lower(): channel
+            channel.strip().lstrip('@').lower(): channel.strip()
             for channel in channels}
         if len(unique_channels) > Config.MAX_COURSE_CHANNELS:
             return {
                 'error': 'Too many channels',
-                    'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
-                    'statusCode': 400
-                }
-
+                'message': f'Link up to {Config.MAX_COURSE_CHANNELS} channels',
+                'statusCode': 400
+            }
 
         try:
             for c in unique_channels.values():
