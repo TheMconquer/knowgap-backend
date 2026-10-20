@@ -396,8 +396,9 @@ async def get_canvas_quiz_questions(token: str, quiz_id: str) -> dict:
         return {'error': 'Internal server error', 'statusCode': 500}
 
 
-async def get_instructor_courses(canvas_token: str) -> dict:
-    """Get all courses taught by the instructor using their Canvas token."""
+async def get_instructor_courses(canvas_token: str, active_only: bool = False) -> dict:
+    """Get all courses taught by the instructor using their Canvas token.
+    By default this includes past-term courses; active_only drops them."""
     try:
         headers = {
             'Authorization': f'Bearer {canvas_token}',
@@ -405,6 +406,8 @@ async def get_instructor_courses(canvas_token: str) -> dict:
         }
         url = f"{CANVAS_API_URL}/courses"
         params = {'enrollment_type': 'teacher', 'per_page': 100}
+        if active_only:
+            params['enrollment_state'] = 'active'
         async with create_canvas_session() as session:
             courses_data, error = await _fetch_all_canvas_pages(session, url, headers, params)
             if error:
