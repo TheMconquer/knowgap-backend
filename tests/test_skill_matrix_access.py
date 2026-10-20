@@ -218,6 +218,41 @@ class SkillMatrixAccessTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.matrices.docs), 3)
         self.import_status.update_one.assert_not_awaited()
 
+    # AI question analysis
+    async def analyze(self, course_id, matrix_id):
+        self.ai = AsyncMock(return_value=[])
+        with patch('services.achieveup_ai_service.analyze_questions', self.ai):
+            return await achieveup_service.analyze_questions_with_ai(
+                't', [{'id': 'q1', 'text': 'Q'}], course_id, matrix_id)
+
+    async def test_analyze_with_own_matrix(self):
+        result = await self.analyze('100', 'm-own')
+        self.assertEqual(result['course_skills_used'], ['Skill A'])
+        self.ai.assert_awaited_once()
+
+    async def test_analyze_ignores_matrix_from_other_course(self):
+        self.matrices.docs['m-other']['skills'] = ['Secret Skill']
+        result = await self.analyze('100', 'm-other')
+        # Falls back to the caller's own course matrix, as for a missing ID.
+        self.assertEqual(result['course_skills_used'], ['Skill A'])
+        self.assertNotIn(['Secret Skill'], [call.args[1] for call in self.ai.await_args_list])
+
+    async def test_analyze_denied_for_other_course(self):
+        result = await self.analyze('999', 'm-other')
+        self.assertEqual(result['statusCode'], 403)
+        self.ai.assert_not_awaited()
+
+    async def test_analyze_denied_for_past_course(self):
+        result = await self.analyze('50', 'm-past')
+        self.assertEqual(result['statusCode'], 403)
+        self.ai.assert_not_awaited()
+
+    async def test_analyze_denied_for_student(self):
+        self.user = STUDENT
+        result = await self.analyze('100', 'm-own')
+        self.assertEqual(result['statusCode'], 403)
+        self.ai.assert_not_awaited()
+
 
 class FakeResponse:
     def __init__(self, status, json_payload):

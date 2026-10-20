@@ -593,18 +593,21 @@ async def suggest_course_skills_ai(token: str, course_data: dict) -> dict:
 async def analyze_questions_with_ai(token: str, questions: list, course_id: str, matrix_id: str = None) -> dict:
     """Analyze questions using AI for complexity and skill mapping."""
     try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
-        
+        _, error = await require_course_instructor(token, course_id)
+        if error:
+            return error
+
         course_skills = []
         matrix_used = None
-        
+
         # Priority 1: Use the specified matrix_id if provided
         if matrix_id:
             logger.info(f"Using specified matrix_id: {matrix_id}")
             matrix = await achieveup_skill_matrices_collection.find_one({'_id': matrix_id})
+            # A matrix from another course is treated as not found, so it
+            # can't be read through a course the caller does teach.
+            if matrix and str(matrix.get('course_id')) != str(course_id):
+                matrix = None
             if matrix and 'skills' in matrix:
                 course_skills = matrix['skills']
                 matrix_used = matrix.get('matrix_name', matrix_id)
