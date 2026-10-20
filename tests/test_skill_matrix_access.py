@@ -345,6 +345,26 @@ class SkillMappingAccessTest(unittest.IsolatedAsyncioTestCase):
         self.import_status.update_one.assert_not_awaited()
 
 
+class InstructorDashboardTest(unittest.IsolatedAsyncioTestCase):
+    async def test_dashboard_returns_no_matrices(self):
+        matrices = AsyncMock()
+        students = [{'id': '1'}, {'id': '2'}]
+        with patch('services.achieveup_service.achieveup_verify_token',
+                   AsyncMock(return_value={'user': INSTRUCTOR})), \
+             patch('services.achieveup_auth_service.get_user_canvas_token',
+                   AsyncMock(return_value='canvas-token')), \
+             patch('services.achieveup_canvas_service.get_instructor_courses',
+                   AsyncMock(return_value=[{'id': '100'}])), \
+             patch('services.achieveup_canvas_service.get_course_students',
+                   AsyncMock(return_value=students)), \
+             patch('services.achieveup_service.achieveup_skill_matrices_collection', matrices):
+            result = await achieveup_service.get_instructor_dashboard('t')
+
+        self.assertEqual(set(result), {'courses', 'students', 'totalCourses', 'lastUpdated'})
+        self.assertEqual(result['students'], 2)
+        self.assertEqual(matrices.mock_calls, [])
+
+
 class FakeResponse:
     def __init__(self, status, json_payload):
         self.status = status

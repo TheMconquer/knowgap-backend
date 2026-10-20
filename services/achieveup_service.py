@@ -446,19 +446,11 @@ async def get_instructor_dashboard(token: str) -> dict:
         courses = courses_result if isinstance(courses_result, list) else []
 
         students = students_result if isinstance(students_result, list) else []
-        
-        # Get skill matrices count
-        matrices_count = await achieveup_skill_matrices_collection.count_documents({})
-        
-        # Get recent activity
-        recent_matrices = await achieveup_skill_matrices_collection.find({}).sort([('created_at', -1)]).limit(5).to_list(length=5)
-        
+
         dashboard_data = {
             'courses': courses,
             'students': len(students),
             'totalCourses': len(courses),
-            'totalSkillMatrices': matrices_count,
-            'recentMatrices': recent_matrices,
             'lastUpdated': datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         }
         
