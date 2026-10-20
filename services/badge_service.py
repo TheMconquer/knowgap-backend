@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from services.achieveup_auth_service import achieveup_verify_token
 from services.skill_tiers import tier_for_score
+from utils.course_utils import course_id_filter
 from config import Config
 
 from mongodb import get_db
@@ -21,7 +22,7 @@ achieveup_student_skill_mastery_collection = db[Config.ACHIEVEUP_STUDENT_SKILL_M
 achieveup_skill_matrices_collection = db[Config.ACHIEVEUP_SKILL_MATRICES_COLLECTION]
 
 
-async def create_badge_for_student(user_id: str, course_id: str, skill_id: str, badge_level: str, progress_percentage: float, student_name: str = None) -> dict:
+async def create_badge_for_student(user_id: str, course_id: str, skill_id: str, badge_level: str, progress_percentage: float, student_name: str = None, course_name: str = None) -> dict:
     """
     Create a badge for a student. Intended to be called by internal services (e.g. mastery_service).
     """
@@ -36,22 +37,17 @@ async def create_badge_for_student(user_id: str, course_id: str, skill_id: str, 
         # Fallback logic: 1. skill_name in mastery, 2. skill_id (if it's a name), 3. 'Skill'
         skill_name = mastery_doc.get('skill_name') or mastery_doc.get('skill_id') or skill_id or 'Skill'
 
-        # Look up actual course name from skill matrices
-        course_name = None
-        try:
-            matrix = await achieveup_skill_matrices_collection.find_one({
-                '$or': [
-                    {'course_id': course_id},
-                    {'course_id': int(course_id) if str(course_id).isdigit() else course_id}
-                ]
-            })
-            if matrix and matrix.get('matrix_name'):
-                course_name = matrix.get('matrix_name')
-        except Exception as e:
-            logger.warning(f"Could not look up course name for course_id {course_id}: {e}")
-        
+        # Prefer the Canvas name the sync passed in; fall back to the one the sync saved on
+        # the course's matrices. Left as None when unknown so it never masks a real name.
         if not course_name:
-            course_name = 'Unknown Course'
+            try:
+                matrix = await achieveup_skill_matrices_collection.find_one(
+                    {**course_id_filter(course_id), 'course_name': {'$nin': [None, '']}}
+                )
+                if matrix:
+                    course_name = matrix['course_name']
+            except Exception as e:
+                logger.warning(f"Could not look up course name for course_id {course_id}: {e}")
 
         badge_name = f"{badge_level.title()} in {skill_name}"
         
@@ -180,10 +176,13 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
         # Get all badges for the student. A badge document only exists because
         # it already crossed its tier threshold at creation time (see
         # tier_for_score) — no re-filtering by current percentage needed here.
-        badges = [badge_doc async for badge_doc in achieveup_user_badges_collection.find({'user_id': student_id}, {"_id": 0})]
+        query = {'user_id': student_id}
+        if course_id:
+            query.update(course_id_filter(course_id))
+        badges = [badge_doc async for badge_doc in achieveup_user_badges_collection.find(query, {"_id": 0})]
 
         # Get course names from Canvas API
-        from services.achieveup_canvas_service import get_instructor_courses
+        from services.achieveup_canvas_service import get_instructor_courses, official_course_name
 
         # Create a map of course_id to course_name
         course_map = {}
@@ -191,11 +190,14 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
         
         # 1. Try to get course names from skill matrices (fastest and handles mock data)
         for cid in course_ids:
-            matrix = await achieveup_skill_matrices_collection.find_one({'$or': [{'course_id': cid}, {'course_id': int(cid) if cid.isdigit() else cid}]})
-            if matrix and matrix.get('course_name'):
-                course_map[cid] = matrix.get('course_name')
+            matrix = await achieveup_skill_matrices_collection.find_one(
+                {**course_id_filter(cid), 'course_name': {'$nin': [None, '']}}
+            )
+            if matrix:
+                course_map[cid] = matrix['course_name']
 
-        # 2. Try canvas API for missing names
+        # 2. Try canvas API for missing names. This only finds courses the viewer teaches, so it
+        #    covers instructors; students rely on the name the sync saves on the matrices.
         missing_ids = [cid for cid in course_ids if cid not in course_map]
         if missing_ids and canvas_token:
             try:
@@ -205,8 +207,9 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
                 courses = courses_result if isinstance(courses_result, list) else []
                 for course in courses:
                     cid_str = str(course.get('id'))
-                    if cid_str in missing_ids:
-                        course_map[cid_str] = course.get('name', 'Unknown Course')
+                    name = official_course_name(course)
+                    if cid_str in missing_ids and name:
+                        course_map[cid_str] = name
             except Exception as e:
                 logger.error(f"Error fetching courses: {str(e)}")
         
@@ -229,7 +232,7 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
                 'progress_percentage': badge.get('progress_percentage'),
                 'earned_at': badge.get('earned_at'),
                 'course_id': badge.get('course_id'),
-                'course_name': course_map.get(str(badge.get('course_id'))) or badge.get('course_name') or 'Unknown Course'
+                'course_name': course_map.get(str(badge.get('course_id'))) or _stored_course_name(badge)
             }
             enriched_badges.append(enriched_badge)
         
@@ -250,6 +253,11 @@ async def get_student_earned_badges(token: str, student_id: str, course_id: str 
         logger.error(f"Get student earned badges error: {str(e)}")
         return {'error': 'Internal server error', 'statusCode': 500} 
 
+def _stored_course_name(badge: dict) -> str | None:
+    """A badge's saved course name, ignoring the "Unknown Course" placeholder older badges stored."""
+    name = badge.get('course_name')
+    return None if name in (None, '', 'Unknown Course') else name
+
 async def _resolve_public_student_name(badges: list, student_id: str) -> str:
     """Best-effort display name for a public badge profile.
 
@@ -269,12 +277,9 @@ async def _resolve_public_student_name(badges: list, student_id: str) -> str:
 
         course_ids = {str(b.get('course_id')) for b in badges if b.get('course_id')}
         for course_id in course_ids:
-            matrix = await achieveup_skill_matrices_collection.find_one({
-                '$or': [
-                    {'course_id': course_id},
-                    {'course_id': int(course_id) if course_id.isdigit() else course_id}
-                ]
-            })
+            matrix = await achieveup_skill_matrices_collection.find_one(
+                {**course_id_filter(course_id), 'created_by': {'$nin': [None, '']}}
+            )
             instructor_id = matrix.get('created_by') if matrix else None
             if not instructor_id:
                 continue
@@ -314,7 +319,7 @@ def _public_badge_view(badge: dict) -> dict:
         'progress_percentage': badge.get('progress_percentage'),
         'earned_at': badge.get('earned_at'),
         'course_id': badge.get('course_id'),
-        'course_name': badge.get('course_name')
+        'course_name': _stored_course_name(badge)
     }
 
 
