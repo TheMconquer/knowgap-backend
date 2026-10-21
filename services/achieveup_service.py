@@ -435,20 +435,25 @@ async def get_instructor_dashboard(token: str) -> dict:
                 'statusCode': 400
             }
         
-        courses_result = await get_instructor_courses(canvas_token)
+        courses_result = await get_instructor_courses(canvas_token, active_only=True)
         if 'error' in courses_result:
             return courses_result
 
-        for course in courses_result:
-            course_id = course['id']
-            students_result = await get_course_students(canvas_token, course_id)
-            if 'error' in students_result:
-                return students_result
-        
         courses = courses_result if isinstance(courses_result, list) else []
 
-        students = students_result if isinstance(students_result, list) else []
-        
+        # Count each student once, even if they're in several of these courses.
+        # If any roster can't be loaded, the count is reported as unknown (None)
+        # rather than as a partial number.
+        student_ids = set()
+        roster_failed = False
+        for course in courses:
+            students_result = await get_course_students(canvas_token, course['id'])
+            if not isinstance(students_result, list):
+                logger.warning(f"Dashboard student count unavailable, roster for course {course['id']} failed: {students_result.get('error')}")
+                roster_failed = True
+                break
+            student_ids.update(student['id'] for student in students_result)
+
         # Get skill matrices count
         matrices_count = await achieveup_skill_matrices_collection.count_documents({})
         
@@ -457,7 +462,7 @@ async def get_instructor_dashboard(token: str) -> dict:
         
         dashboard_data = {
             'courses': courses,
-            'students': len(students),
+            'students': None if roster_failed else len(student_ids),
             'totalCourses': len(courses),
             'totalSkillMatrices': matrices_count,
             'recentMatrices': recent_matrices,
