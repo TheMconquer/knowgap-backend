@@ -317,6 +317,31 @@ class SkillMappingAccessTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['statusCode'], 403)
         self.question_skills.update_one.assert_not_awaited()
 
+    async def test_assign_accepts_everything_the_assignment_page_sends(self):
+        # Questions with no skills are sent as empty lists.
+        mappings = {'Q1': ['Loops', 'Recursion'], 'Q2': [], 'Q3': ['A skill with spaces & symbols!']}
+        result = await achieveup_service.assign_skills_to_questions('t', '100', mappings)
+        self.assertEqual(result, {'message': 'Skills assigned successfully'})
+        self.assertEqual(len(self.saved_mappings()), 3)
+
+    async def test_assign_rejects_malformed_mappings(self):
+        for mappings in [
+            ['Q1'],                                   # not question -> skills pairs
+            {'Q1': 'Loops'},                          # skills not a list
+            {'Q1': ['Loops', {'$ne': None}]},         # object would act as a database operator
+            {'Q1': [{'id': 's1', 'name': 'Loops'}]},  # object would crash mastery
+            {'Q1': [None]},
+            {'Q1': [7]},
+        ]:
+            with self.subTest(mappings=mappings):
+                result = await achieveup_service.assign_skills_to_questions('t', '100', mappings)
+                self.assertEqual(result['statusCode'], 400)
+        self.question_skills.update_one.assert_not_awaited()
+
+    async def test_assign_checks_access_before_input(self):
+        result = await achieveup_service.assign_skills_to_questions('t', '999', {'Q1': [None]})
+        self.assertEqual(result['statusCode'], 403)
+
     # Skills import
     async def test_skills_import_from_past_course(self):
         result = await achieveup_service.import_skill_setting_from_course('50', '100', 'inst-1', 't')

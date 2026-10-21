@@ -688,19 +688,13 @@ async def instructor_force_sync_route(course_id):
 
         token = auth_header.split(' ')[1]
 
-        # Verify instructor
-        from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return jsonify(user_result), user_result.get('statusCode', 401)
-
-        user = user_result['user']
-        if user.get('role') != 'instructor' or user.get('canvasTokenType') != 'instructor':
-            return jsonify({
-                'error': 'Forbidden',
-                'message': 'Instructor access required',
-                'statusCode': 403
-            }), 403
+        # The sync rebuilds the whole course's mastery from what the caller's
+        # Canvas token can see, so they must teach (or have taught) the course.
+        from services.achieveup_auth_service import get_user_canvas_token
+        from services.achieveup_service import require_course_instructor
+        user, error = await require_course_instructor(token, course_id, include_concluded=True)
+        if error:
+            return jsonify(error), error['statusCode']
 
         # Get the instructor's Canvas token
         canvas_token = await get_user_canvas_token(user['id'])

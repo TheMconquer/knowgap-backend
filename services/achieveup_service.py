@@ -301,6 +301,18 @@ async def assign_skills_to_questions(token: str, course_id: str, question_skills
         if error:
             return error
 
+        # Each question maps to a list of skill names. Mastery uses every
+        # skill as a lookup key and database value, so anything that isn't a
+        # string (an object, number or null) would break or alter it.
+        if not isinstance(question_skills, dict) or not all(
+                isinstance(skills, list) and all(isinstance(skill, str) for skill in skills)
+                for skills in question_skills.values()):
+            return {
+                'error': 'Invalid skill mappings',
+                'message': 'Each question must map to a list of skill names.',
+                'statusCode': 400
+            }
+
         await _save_question_skills(user['id'], course_id, question_skills)
         return {'message': 'Skills assigned successfully'}
 
@@ -377,11 +389,19 @@ async def get_assigned_skills(token: str, course_id: str, question_ids:list[str]
 async def get_student_progress(token: str, student_id: str, course_id: str) -> dict:
     """Get skill progress for a student in a course."""
     try:
-        # Verify user token
         user_result = await achieveup_verify_token(token)
         if 'error' in user_result:
             return user_result
-        
+
+        # Students may read their own progress. Anyone else must be an
+        # instructor who teaches (or taught) the course. An account with no
+        # Canvas id saved is never treated as the student being asked about.
+        own_id = user_result['user'].get('canvas_student_id')
+        if own_id is None or str(own_id) != str(student_id):
+            _, error = await require_course_instructor(token, course_id, include_concluded=True)
+            if error:
+                return error
+
         # Find progress
         progress = await achieveup_progress_collection.find_one({
             'student_id': student_id,
@@ -498,13 +518,10 @@ async def get_instructor_course_students(token: str, course_id: str) -> dict:
 async def suggest_course_skills_ai(token: str, course_data: dict) -> dict:
     """Generate AI-powered skill suggestions for a course."""
     try:
-        # Verify user token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return user_result
+        user, error = await require_instructor(token)
+        if error:
+            return error
 
-        user = user_result['user']
-        
         # Use OpenAI directly with proper async syntax
         from openai import AsyncOpenAI
         import json
@@ -955,6 +972,15 @@ async def check_course_instructor(user: dict, course_id: str, include_concluded:
     """Return None if Canvas confirms the (already verified) instructor
     teaches the course, otherwise an error dict. include_concluded also
     accepts a course they taught in a past term; use it only for reads."""
+    # Canvas course ids are plain digits. Anything else (e.g. '.?' or
+    # '1/../2') would change which Canvas URL gets checked.
+    if not re.fullmatch(r'[0-9]+', str(course_id)):
+        return {
+            'error': 'Invalid course ID',
+            'message': 'Course ID must be a number.',
+            'statusCode': 400
+        }
+
     canvas_token = await get_user_canvas_token(user['id'])
     if not canvas_token:
         return {
