@@ -75,8 +75,7 @@ Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <J
 - **Purpose**: Manages the curated list of videos for each skill in AchieveUp.
 - **Key Endpoints**:
   - `POST /achieveup/skill-videos/get` - Gets the curated video list for a skill.
-  - `POST /achieveup/skill-videos` - Instructor adds a video to a skill.
-  - `PUT /achieveup/skill-videos/<video_id>` - Instructor edits a video, or accepts an AI-suggested candidate.
+  - `POST /achieveup/skill-videos` - Instructor adds a YouTube video to a skill.
   - `DELETE /achieveup/skill-videos/<video_id>` - Instructor removes a video.
   - `POST /achieveup/skill-videos/suggest` - Instructor requests AI-suggested videos for a skill.
   - `POST /achieveup/skill-videos/<video_id>/find-moment` - Instructor finds the transcript moment most relevant to a video.
