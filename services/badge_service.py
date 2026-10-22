@@ -136,7 +136,8 @@ async def _instructor_teaches_student(canvas_token: str, student_id: str, hint_c
     return False
 
 async def get_student_earned_badges(token: str, student_id: str, course_id: str = None) -> dict:
-    """Get all earned badges for a specific student with course information."""
+    """Get a student's earned badges with course information: all of them
+    for the student themself, or one course's for an instructor of it."""
     try:
         # Verify token
         user_result = await achieveup_verify_token(token)

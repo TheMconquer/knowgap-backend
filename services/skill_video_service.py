@@ -67,9 +67,17 @@ def _display_rank(doc):
 
 
 async def _resolve_matrix_id(course_id: str, matrix_id: str, skill_name: str) -> str:
-    """Resolve a matrix_id for (course_id, skill_name) when the caller doesn't know it."""
+    """Return the matrix_id to use for (course_id, skill_name): the one sent,
+    or the course's matrix with that skill when none is sent.
+
+    A matrix from another course is ignored, as in analyze_questions_with_ai,
+    so videos can't be filed under it and its course name never reaches the
+    AI prompt. An id with no matrix behind it (one since deleted, or
+    'primary') is kept, so videos already saved under it still show."""
     if matrix_id:
-        return matrix_id
+        matrix = await achieveup_skill_matrices_collection.find_one({'_id': matrix_id}, {'course_id': 1})
+        if not matrix or str(matrix.get('course_id')) == str(course_id):
+            return matrix_id
 
     matrix = await achieveup_skill_matrices_collection.find_one({
         'course_id': course_id,

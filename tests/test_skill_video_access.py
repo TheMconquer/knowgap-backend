@@ -105,6 +105,32 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
         self.videos.find_one = AsyncMock(side_effect=lambda query, *a: self.stored.get(query['_id']))
         self.votes = MagicMock()
         self.votes.delete_many = AsyncMock()
+        # Course 100 has matrix m-1 (and m-int, saved with a numeric course
+        # id); m-999 belongs to another course.
+        matrix_docs = [
+            {'_id': 'm-1', 'course_id': '100', 'skills': ['Loops'], 'course_name': 'Intro Programming'},
+            {'_id': 'm-int', 'course_id': 100, 'skills': ['Loops'], 'course_name': 'Intro Programming'},
+            {'_id': 'm-999', 'course_id': '999', 'skills': ['Loops'], 'course_name': 'Other Course'},
+        ]
+
+        async def find_matrix(query, projection=None):
+            return next((m for m in matrix_docs if all(
+                (value in m[key]) if key == 'skills' else m[key] == value
+                for key, value in query.items())), None)
+        self.matrices = MagicMock()
+        self.matrices.find_one = AsyncMock(side_effect=find_matrix)
+        self.video_queries = []
+
+        def find_videos(query):
+            self.video_queries.append(query)
+
+            async def no_videos():
+                return
+                yield
+            cursor = MagicMock()
+            cursor.sort.return_value = no_videos()
+            return cursor
+        self.videos.find = MagicMock(side_effect=find_videos)
 
         async def verify_token(token):
             return {'user': self.user}
@@ -117,10 +143,12 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
         for target, value in [
             ('services.achieveup_auth_service.achieveup_verify_token', verify_token),
             ('services.achieveup_service.achieveup_verify_token', verify_token),
+            ('services.skill_video_service.achieveup_verify_token', verify_token),
             ('services.achieveup_service.get_user_canvas_token', AsyncMock(return_value='canvas-token')),
             ('services.achieveup_service.validate_canvas_instructor_for_course', validate),
             ('services.skill_video_service.skill_videos_collection', self.videos),
             ('services.skill_video_service.skill_video_votes_collection', self.votes),
+            ('services.skill_video_service.achieveup_skill_matrices_collection', self.matrices),
             ('services.skill_video_service.get_video_metadata', AsyncMock(return_value={
                 'title': 'Loops', 'channel': 'CS Channel', 'thumbnail': 'https://i.ytimg.com/x.jpg'})),
         ]:
@@ -174,6 +202,40 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
         self.votes.delete_many.assert_not_awaited()
         self.videos.find_one_and_update.assert_not_awaited()
         transcript.assert_not_called()
+
+    # Matrix ids
+    async def test_matrix_from_another_course_is_ignored(self):
+        await skill_video_service.add_skill_video('t', '100', 'Loops', CLEAN_LINK, matrix_id='m-999')
+        self.assertEqual(self.videos.insert_one.await_args.args[0]['matrix_id'], 'm-1')
+
+        result = await skill_video_service.get_skill_videos('t', '100', 'Loops', 'm-999')
+        self.assertEqual(result['matrix_id'], 'm-1')
+        self.assertEqual(self.video_queries[-1]['matrix_id'], 'm-1')
+
+    async def test_suggest_never_uses_another_courses_matrix(self):
+        topics = AsyncMock(return_value={'success': False, 'error': 'stop here'})
+        descriptions = MagicMock()
+        descriptions.find_one = AsyncMock(return_value={'description': 'Course description'})
+        mappings = MagicMock()
+
+        async def no_mappings():
+            return
+            yield
+        mappings.find.return_value.limit.return_value = no_mappings()
+        with patch('services.skill_video_service.generate_skill_search_topics', topics), \
+             patch('services.skill_video_service.achieveup_course_descriptions_collection', descriptions), \
+             patch('services.skill_video_service.achieveup_question_skills_collection', mappings):
+            await skill_video_service.generate_ai_video_recommendations('t', '100', 'Loops', matrix_id='m-999')
+        course_name = topics.await_args.args[1]
+        self.assertEqual(course_name, 'Intro Programming')
+
+    async def test_own_and_unknown_matrix_ids_are_kept(self):
+        # 'primary' and deleted matrices have no matrix document, but videos
+        # saved under them must still load.
+        for matrix_id in ['m-1', 'm-int', 'primary', 'deleted-matrix']:
+            with self.subTest(matrix_id=matrix_id):
+                result = await skill_video_service.get_skill_videos('t', '100', 'Loops', matrix_id)
+                self.assertEqual(result['matrix_id'], matrix_id)
 
     # Remove
     async def test_instructor_removes_video_in_own_course(self):

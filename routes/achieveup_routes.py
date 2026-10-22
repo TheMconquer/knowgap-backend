@@ -336,7 +336,8 @@ async def get_assigned_skills_route():
 
 @achieveup_bp.route('/achieveup/badges/student/<student_id>/earned', methods=['GET'])
 async def get_student_earned_badges_route(student_id):
-    """Get all earned badges for a specific student with course information. (AchieveUp only)"""
+    """Get a student's earned badges with course information: all of them for the
+    student themself, or one course's (?course_id=) for an instructor of it. (AchieveUp only)"""
     try:
         # Get token from Authorization header
         auth_header = request.headers.get('Authorization')
