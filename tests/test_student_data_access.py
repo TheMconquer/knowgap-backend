@@ -74,6 +74,7 @@ class StudentDataAccessTest(unittest.IsolatedAsyncioTestCase):
     async def test_instructor_reads_progress_in_own_course(self):
         result = await achieveup_service.get_student_progress('t', '555', '100')
         self.assertEqual(result['student_id'], '555')
+        self.progress.find_one.assert_awaited_once_with({'student_id': '555', 'course_id': '100'})
 
     async def test_instructor_reads_progress_in_past_course(self):
         result = await achieveup_service.get_student_progress('t', '555', '50')
@@ -106,7 +107,7 @@ class StudentDataAccessTest(unittest.IsolatedAsyncioTestCase):
 
     # Course id format
     async def test_non_numeric_course_ids_rejected_before_canvas(self):
-        for course_id in ['.?', '1/../2', '100?x', '12a', '', None, '١٢', '１２']:
+        for course_id in ['.?', '1/../2', '100?x', '12a', '100\n', '', None, '١٢', '１２']:
             with self.subTest(course_id=course_id):
                 result = await achieveup_service.check_course_instructor(INSTRUCTOR, course_id)
                 self.assertEqual(result['statusCode'], 400)
@@ -155,6 +156,8 @@ class BadgeViewAccessTest(unittest.IsolatedAsyncioTestCase):
              'earned_at': datetime(2026, 9, 1)},
             {'user_id': '555', 'course_id': '777', 'badge_id': 'b-777', 'skill_name': 'Recursion',
              'earned_at': datetime(2026, 10, 1)},
+            {'user_id': '555', 'course_id': '50', 'badge_id': 'b-50', 'skill_name': 'Arrays',
+             'earned_at': datetime(2025, 3, 1)},
         ])
         matrices = MagicMock()
         matrices.find_one = AsyncMock(return_value={'course_name': 'Course'})
@@ -187,11 +190,15 @@ class BadgeViewAccessTest(unittest.IsolatedAsyncioTestCase):
     async def test_student_sees_own_badges_in_every_course(self):
         self.user = STUDENT
         result = await self.view('555')
-        self.assertEqual({b['badge_id'] for b in result['badges']}, {'b-100', 'b-777'})
+        self.assertEqual({b['badge_id'] for b in result['badges']}, {'b-100', 'b-777', 'b-50'})
 
     async def test_instructor_sees_only_the_course_they_teach(self):
         result = await self.view('555', '100')
         self.assertEqual([b['badge_id'] for b in result['badges']], ['b-100'])
+
+    async def test_instructor_sees_badges_in_past_course(self):
+        result = await self.view('555', '50')
+        self.assertEqual([b['badge_id'] for b in result['badges']], ['b-50'])
 
     async def test_instructor_denied_for_course_they_dont_teach(self):
         result = await self.view('555', '777')

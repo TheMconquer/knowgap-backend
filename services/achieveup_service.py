@@ -972,6 +972,12 @@ async def check_course_instructor(user: dict, course_id: str, include_concluded:
     """Return None if Canvas confirms the (already verified) instructor
     teaches the course, otherwise an error dict. include_concluded also
     accepts a course they taught in a past term; use it only for reads."""
+    if course_id is None or course_id == '':
+        return {
+            'error': 'Missing course ID',
+            'message': 'Course ID is required.',
+            'statusCode': 400
+        }
     # Canvas course ids are plain digits. Anything else (e.g. '.?' or
     # '1/../2') would change which Canvas URL gets checked.
     if not re.fullmatch(r'[0-9]+', str(course_id)):
@@ -1032,7 +1038,8 @@ async def get_course_channels(token: str, course_id: str) -> list | dict:
     saved), or an error dict if the user can't access the course.
     """
     try:
-        user, error = await require_course_instructor(token, course_id)
+        # Read-only, so a past course the instructor taught is allowed.
+        user, error = await require_course_instructor(token, course_id, include_concluded=True)
         if error:
             return error
 

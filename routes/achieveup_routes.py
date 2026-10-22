@@ -893,11 +893,8 @@ async def achieveup_ai_analyze_questions_route():
         elif len(questions) == 0:
             validation_errors.append("questions array cannot be empty")
         
-        # Make courseId and quizId optional with intelligent defaults
-        if not course_id:
-            logger.info("courseId not provided, will auto-detect from questions")
-            course_id = "unknown_course"  # Will be detected in service
-            
+        # courseId is checked by the service, which needs it to confirm the
+        # caller teaches the course. quizId is optional.
         if not quiz_id:
             logger.info("quizId not provided, using generic quiz ID")
             quiz_id = "generic_quiz"

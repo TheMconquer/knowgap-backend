@@ -33,6 +33,8 @@ class YouTubeLinkTest(unittest.TestCase):
             f'  https://youtu.be/{VIDEO_ID}  ',
             f'https://youtu.be/{VIDEO_ID}?t=0',
             f'https://youtu.be/{VIDEO_ID}?t=abc',
+            f'https://youtu.be/{VIDEO_ID}?t=90abc',
+            f'https://youtu.be/{VIDEO_ID}?t=' + '9' * 5000,  # too long to be a time
         ]:
             with self.subTest(link=link):
                 self.assertEqual(normalize_youtube_link(link), CLEAN_LINK)
@@ -67,6 +69,13 @@ class YouTubeLinkTest(unittest.TestCase):
             f'https://www.youtube.com/watch?v={VIDEO_ID}"onmouseover=alert(1)',
             'https://www.youtube.com/watch?v=%3Cscript%3E',
             'https://[::1/watch',
+            f'https://evil.com/embed/{VIDEO_ID}',
+            f'https://notyoutu.be/{VIDEO_ID}',
+            f'https://evilyoutube.com/watch?v={VIDEO_ID}',
+            'https://www.youtube.com/user/ABCDEFGHIJK',
+            f'https://www.youtube.com/foo/watch?v={VIDEO_ID}',
+            'https://www.youtube.com/watch?v=%22%3E%3Cb%3Exxxxxx',  # 11 chars, not an id
+            'https://www.youtube.com/watch?v=' + '\u00e9' * 11,
             '', None, 123, {'$ne': None},
         ]:
             with self.subTest(link=link):
@@ -90,6 +99,7 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
             '_id': query['_id'], 'course_id': '100', **update['$set']})
         self.stored = {
             'v-100': {'_id': 'v-100', 'course_id': '100', 'source': 'ai_suggested', 'added_by': 'inst-1'},
+            'v-50': {'_id': 'v-50', 'course_id': '50', 'source': 'ai_suggested', 'added_by': 'inst-1'},
             'v-999': {'_id': 'v-999', 'course_id': '999', 'source': 'ai_suggested', 'added_by': 'inst-2'},
         }
         self.videos.find_one = AsyncMock(side_effect=lambda query, *a: self.stored.get(query['_id']))
@@ -100,7 +110,7 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
             return {'user': self.user}
 
         async def validate(canvas_token, course_id, include_concluded=False):
-            if course_id == '100':
+            if course_id == '100' or (include_concluded and course_id == '50'):
                 return {'valid': True}
             return {'valid': False, 'statusCode': 403, 'message': 'Not your course'}
 
@@ -145,6 +155,26 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['statusCode'], 400)
         self.videos.insert_one.assert_not_awaited()
 
+    async def test_add_denied_for_past_course(self):
+        result = await self.add('50')
+        self.assertEqual(result['statusCode'], 403)
+        self.videos.insert_one.assert_not_awaited()
+
+    async def test_changes_denied_for_past_course_and_for_students(self):
+        with patch('services.skill_video_service.fetch_video_transcript') as transcript:
+            for user, video_id in [(INSTRUCTOR, 'v-50'), (STUDENT, 'v-100')]:
+                self.user = user
+                for action in (skill_video_service.remove_skill_video,
+                               skill_video_service.verify_ai_video,
+                               skill_video_service.find_relevant_moment):
+                    with self.subTest(user=user['role'], video=video_id, action=action.__name__):
+                        result = await action('t', video_id)
+                        self.assertEqual(result['statusCode'], 403)
+        self.videos.delete_one.assert_not_awaited()
+        self.votes.delete_many.assert_not_awaited()
+        self.videos.find_one_and_update.assert_not_awaited()
+        transcript.assert_not_called()
+
     # Remove
     async def test_instructor_removes_video_in_own_course(self):
         result = await skill_video_service.remove_skill_video('t', 'v-100')
@@ -181,6 +211,30 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['statusCode'], 403)
         transcript.assert_not_called()
 
+    # AI suggestions
+    async def test_suggest_denied_for_past_course_other_course_and_students(self):
+        with patch('services.skill_video_service.generate_skill_search_topics') as topics:
+            for user, course_id in [(INSTRUCTOR, '50'), (INSTRUCTOR, '999'), (STUDENT, '100')]:
+                self.user = user
+                with self.subTest(user=user['role'], course_id=course_id):
+                    result = await skill_video_service.generate_ai_video_recommendations('t', course_id, 'Loops')
+                    self.assertEqual(result['statusCode'], 403)
+        topics.assert_not_called()
+        self.videos.insert_many.assert_not_called()
+
+    # Preferred channels (read)
+    async def test_channels_readable_in_current_and_past_course_only(self):
+        from services import achieveup_service
+        with patch('services.achieveup_service.get_saved_course_channels',
+                   AsyncMock(return_value=[{'channel_id': 'c1', 'name': 'CS'}])) as saved:
+            for course_id in ['100', '50']:
+                with self.subTest(course_id=course_id):
+                    self.assertEqual(await achieveup_service.get_course_channels('t', course_id),
+                                     [{'channel_id': 'c1', 'name': 'CS'}])
+            result = await achieveup_service.get_course_channels('t', '999')
+        self.assertEqual(result['statusCode'], 403)
+        self.assertEqual(saved.await_count, 2)
+
 
 class SkillVideoRouteInputTest(unittest.IsolatedAsyncioTestCase):
     async def post(self, path, body, service_name):
@@ -202,19 +256,25 @@ class SkillVideoRouteInputTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 201 if path == '/achieveup/skill-videos' else 200)
                 service.assert_awaited_once()
 
-    async def test_query_objects_are_rejected(self):
-        injected = {'$ne': None}
-        for path, body, service_name in [
-            ('/achieveup/skill-videos/get', {'course_id': injected, 'skill_name': injected}, 'get_skill_videos'),
-            ('/achieveup/skill-videos/get', {'course_id': '100', 'skill_name': 'Loops', 'matrix_id': injected}, 'get_skill_videos'),
-            ('/achieveup/skill-videos', {'course_id': '100', 'skill_name': 'Loops', 'link': CLEAN_LINK, 'title': injected}, 'add_skill_video'),
-            ('/achieveup/skill-videos/suggest', {'course_id': '100', 'skill_name': ['Loops']}, 'generate_ai_video_recommendations'),
-            ('/achieveup/skill-videos/vote', {'video_id': injected, 'vote_type': 'upvote'}, 'vote_skill_video'),
+    async def test_each_field_rejects_objects_and_lists(self):
+        add_body = {'course_id': '100', 'skill_name': 'Loops', 'link': CLEAN_LINK}
+        for path, base, fields, service_name in [
+            ('/achieveup/skill-videos/get', {'course_id': '100', 'skill_name': 'Loops'},
+             ['course_id', 'skill_name', 'matrix_id'], 'get_skill_videos'),
+            ('/achieveup/skill-videos', add_body,
+             ['course_id', 'skill_name', 'link', 'matrix_id', 'title', 'channel', 'thumbnail', 'source'],
+             'add_skill_video'),
+            ('/achieveup/skill-videos/suggest', {'course_id': '100', 'skill_name': 'Loops'},
+             ['course_id', 'skill_name', 'matrix_id'], 'generate_ai_video_recommendations'),
+            ('/achieveup/skill-videos/vote', {'video_id': 'v-100', 'vote_type': 'upvote'},
+             ['video_id', 'vote_type'], 'vote_skill_video'),
         ]:
-            with self.subTest(path=path, body=body):
-                response, service = await self.post(path, body, service_name)
-                self.assertEqual(response.status_code, 400)
-                service.assert_not_called()
+            for field in fields:
+                for bad_value in ({'$ne': None}, ['x']):
+                    with self.subTest(path=path, field=field, value=bad_value):
+                        response, service = await self.post(path, {**base, field: bad_value}, service_name)
+                        self.assertEqual(response.status_code, 400)
+                        service.assert_not_called()
 
     async def test_edit_route_is_gone(self):
         from app import app

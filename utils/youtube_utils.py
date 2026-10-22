@@ -187,7 +187,7 @@ _YOUTUBE_VIDEO_ID = re.compile(r'[0-9A-Za-z_-]{11}')
 _YOUTUBE_HOSTS = {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
                   'youtube-nocookie.com', 'www.youtube-nocookie.com'}
 _YOUTUBE_ID_PATHS = {'shorts', 'embed', 'live', 'v'}
-_YOUTUBE_START_TIME = re.compile(r'(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?')
+_YOUTUBE_START_TIME = re.compile(r'(?:(\d{1,3})h)?(?:(\d{1,5})m)?(?:(\d{1,6})s?)?')
 
 
 def normalize_youtube_link(link):
@@ -225,6 +225,7 @@ def normalize_youtube_link(link):
 
     normalized = f"https://www.youtube.com/watch?v={video_id}"
     # Keep a start time like t=90, t=90s or t=1m30s (start=90 on embed links).
+    # Anything else, including absurdly long numbers, just drops the start time.
     start = (query.get('t') or query.get('start') or [''])[0]
     match = _YOUTUBE_START_TIME.fullmatch(start)
     if start and match:

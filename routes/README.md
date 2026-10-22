@@ -60,7 +60,7 @@ Unless noted otherwise, AchieveUp endpoints require an `Authorization: Bearer <J
   - Progress:
     - `GET /achieveup/progress/<student_id>/<course_id>` - Gets a student's skill progress in a course.
   - Badges:
-    - `GET /achieveup/badges/student/<student_id>/earned` - Gets all badges a student has earned, with course information.
+    - `GET /achieveup/badges/student/<student_id>/earned` - Gets a student's earned badges with course information: all of them for the student themself, or one course's (`?course_id=`, required) for an instructor of that course.
     - `POST /achieveup/badges/share-profile` - Gets or creates a badge share link, for the caller or for a student an instructor teaches.
     - `GET /achieveup/badges/share-status` - Gets the caller's current share link and opt-out preference.
     - `POST /achieveup/badges/opt-out` - Turns off badge sharing for the caller.
