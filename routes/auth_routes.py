@@ -1,5 +1,6 @@
 from quart import Blueprint, request, jsonify
 from pydantic import BaseModel, StrictStr, ValidationError
+import logging
 from services.achieveup_auth_service import (
     achieveup_signup,
     achieveup_login,
@@ -7,8 +8,10 @@ from services.achieveup_auth_service import (
     achieveup_update_profile,
     achieveup_change_password
 )
+from utils.request_utils import not_text_response
 
 auth_bp = Blueprint('auth', __name__)
+logger = logging.getLogger(__name__)
 
 
 # Each field must be text or missing. The email goes into a database lookup,
@@ -42,14 +45,6 @@ def _parse_text_fields(model, data):
     except ValidationError:
         return None
 
-
-def _not_text_response():
-    return jsonify({
-        'error': 'Invalid request',
-        'message': 'Request fields must be text',
-        'statusCode': 400
-    }), 400
-
 @auth_bp.route('/auth/signup', methods=['POST'])
 async def achieveup_signup_route():
     """User registration with email/password and optional Canvas API token. (AchieveUp only)"""
@@ -65,7 +60,7 @@ async def achieveup_signup_route():
         
         body = _parse_text_fields(SignupRequest, data)
         if body is None:
-            return _not_text_response()
+            return not_text_response()
 
         name = body.name
         email = body.email
@@ -93,6 +88,7 @@ async def achieveup_signup_route():
         return jsonify(result), 201
         
     except Exception as e:
+        logger.error(f"Signup route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
             'message': 'An unexpected error occurred',
@@ -114,7 +110,7 @@ async def achieveup_login_route():
         
         body = _parse_text_fields(LoginRequest, data)
         if body is None:
-            return _not_text_response()
+            return not_text_response()
 
         email = body.email
         password = body.password
@@ -139,6 +135,7 @@ async def achieveup_login_route():
         return jsonify(result), 200
         
     except Exception as e:
+        logger.error(f"Login route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
             'message': 'An unexpected error occurred',
@@ -174,6 +171,7 @@ async def achieveup_me_route():
         return jsonify(verify_result), 200
         
     except Exception as e:
+        logger.error(f"Get current user route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
             'message': 'An unexpected error occurred',
@@ -205,7 +203,7 @@ async def achieveup_update_profile_route():
         
         body = _parse_text_fields(ProfileUpdateRequest, data)
         if body is None:
-            return _not_text_response()
+            return not_text_response()
 
         name = body.name
         email = body.email
@@ -232,6 +230,7 @@ async def achieveup_update_profile_route():
         return jsonify(result), 200
         
     except Exception as e:
+        logger.error(f"Update profile route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
             'message': 'An unexpected error occurred',
@@ -275,6 +274,7 @@ async def validate_canvas_token_route():
         return jsonify(validation_result), 200
         
     except Exception as e:
+        logger.error(f"Validate Canvas token route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
             'message': 'An unexpected error occurred',
@@ -327,6 +327,7 @@ async def achieveup_change_password_route():
         return jsonify({'message': 'Password updated successfully'}), 200
         
     except Exception as e:
+        logger.error(f"Change password route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
             'message': 'An unexpected error occurred',

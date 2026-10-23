@@ -21,7 +21,7 @@ from services.achieveup_service import (
 )
 from utils.ai_utils import generate_skill_search_topics
 from utils.youtube_utils import (
-    fetch_videos_for_topic, get_video_metadata, fetch_video_transcript,
+    fetch_videos_for_topic, get_video_metadata, fetch_video_transcript, VIDEO_NOT_FOUND,
     fetch_videos_for_topic_and_channel, normalize_youtube_link
 )
 
@@ -156,7 +156,8 @@ async def add_skill_video(token: str, course_id: str, skill_name: str, link: str
                            matrix_id: str = None, title: str = None) -> dict:
     """Instructor adds a video to a skill's curated list. The channel and
     thumbnail always come from YouTube, never the caller, so no URL the
-    caller typed other than the rebuilt link reaches the page."""
+    caller typed other than the rebuilt link reaches the page. Nothing is
+    saved if YouTube can't find the video or can't be reached."""
     try:
         user, error = await require_course_instructor(token, course_id)
         if error:
@@ -170,14 +171,22 @@ async def add_skill_video(token: str, course_id: str, skill_name: str, link: str
                 'statusCode': 400
             }
 
-        resolved_matrix_id = await _resolve_matrix_id(course_id, matrix_id, skill_name)
-
-        channel = thumbnail = None
         metadata = await get_video_metadata(link)
-        if 'error' not in metadata:
-            title = title or metadata.get('title')
-            channel = metadata.get('channel')
-            thumbnail = metadata.get('thumbnail')
+        if metadata.get('error') == VIDEO_NOT_FOUND:
+            return {
+                'error': 'Video not found',
+                'message': "Couldn't find that YouTube video. Check the link and that the video isn't private.",
+                'statusCode': 400
+            }
+        if 'error' in metadata:
+            logger.error(f"Add skill video metadata error: {metadata['error']}")
+            return {
+                'error': 'Video lookup failed',
+                'message': "Couldn't get the video's details from YouTube. Please try again.",
+                'statusCode': 502
+            }
+
+        resolved_matrix_id = await _resolve_matrix_id(course_id, matrix_id, skill_name)
 
         now = _now()
         video_doc = {
@@ -185,10 +194,10 @@ async def add_skill_video(token: str, course_id: str, skill_name: str, link: str
             'course_id': course_id,
             'matrix_id': resolved_matrix_id,
             'skill_name': skill_name,
-            'title': title or 'Untitled Video',
+            'title': title or metadata['title'],
             'link': link,
-            'channel': channel or 'Unknown Channel',
-            'thumbnail': thumbnail or '',
+            'channel': metadata['channel'],
+            'thumbnail': metadata['thumbnail'],
             'source': 'manual',
             "prioritize": False,
             'status': 'published',

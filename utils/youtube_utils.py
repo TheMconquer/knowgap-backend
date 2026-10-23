@@ -236,8 +236,18 @@ def normalize_youtube_link(link):
     return normalized
 
 
+VIDEO_NOT_FOUND = "Video not found"
+
+# YouTube normally answers in well under a second; this only stops a stuck
+# request from hanging the caller.
+_METADATA_TIMEOUT = aiohttp.ClientTimeout(total=10)
+
+
 async def get_video_metadata(youtube_url):
-    """Retrieves metadata for a YouTube video by URL asynchronously."""
+    """Retrieves metadata for a YouTube video by URL asynchronously.
+
+    Returns {"error": VIDEO_NOT_FOUND} when YouTube has no such video (or it's
+    private), and another {"error": ...} when YouTube couldn't be asked."""
     video_id = extract_video_id(youtube_url)
     if not video_id:
         return {"error": "Invalid YouTube URL"}
@@ -245,24 +255,27 @@ async def get_video_metadata(youtube_url):
     # YouTube API URL for getting video details
     api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={Config.YOUTUBE_API_KEY}"
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(api_url) as response:
-            if response.status == 200:
+    try:
+        async with aiohttp.ClientSession(timeout=_METADATA_TIMEOUT) as session:
+            async with session.get(api_url) as response:
+                if response.status != 200:
+                    return {"error": f"Failed to fetch metadata, status code: {response.status}"}
                 response_data = await response.json()
 
-                if "items" in response_data and len(response_data["items"]) > 0:
-                    video = response_data["items"][0]["snippet"]
-                    metadata = {
-                        "title": clean_metadata_text(video["title"]),
-                        "link" : youtube_url,
-                        "channel": video["channelTitle"],
-                        "thumbnail": video["thumbnails"]["high"]["url"],
-                    }
-                    return metadata
-                else:
-                    return {"error": "Video not found"}
-            else:
-                return {"error": f"Failed to fetch metadata, status code: {response.status}"}
+        if not response_data.get("items"):
+            return {"error": VIDEO_NOT_FOUND}
+        video = response_data["items"][0]["snippet"]
+        thumbnails = video.get("thumbnails") or {}
+        thumbnail = thumbnails.get("high") or thumbnails.get("medium") or thumbnails.get("default") or {}
+        return {
+            "title": clean_metadata_text(video["title"]),
+            "link": youtube_url,
+            "channel": video["channelTitle"],
+            "thumbnail": thumbnail.get("url", ""),
+        }
+    except Exception as e:
+        logging.error(f"Error fetching metadata for video {video_id}: {type(e).__name__}: {e}")
+        return {"error": "Failed to fetch metadata"}
 
 
 async def fetch_video_transcript(video_id_or_url, languages=['en']):
