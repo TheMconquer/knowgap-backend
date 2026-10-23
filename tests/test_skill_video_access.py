@@ -165,7 +165,20 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
         saved = self.videos.insert_one.await_args.args[0]
         self.assertEqual(saved['link'], CLEAN_LINK)
         self.assertEqual(saved['course_id'], '100')
+        self.assertEqual(saved['source'], 'manual')
+        self.assertEqual(saved['channel'], 'CS Channel')
+        self.assertEqual(saved['thumbnail'], 'https://i.ytimg.com/x.jpg')
         self.assertNotIn('added_by', result)
+
+    async def test_add_falls_back_when_youtube_lookup_fails(self):
+        with patch('services.skill_video_service.get_video_metadata',
+                   AsyncMock(return_value={'error': 'Video not found'})):
+            await self.add('100')
+        saved = self.videos.insert_one.await_args.args[0]
+        self.assertEqual(saved['title'], 'Untitled Video')
+        self.assertEqual(saved['channel'], 'Unknown Channel')
+        self.assertEqual(saved['thumbnail'], '')
+        self.assertEqual(saved['source'], 'manual')
 
     async def test_add_denied_for_course_not_taught(self):
         result = await self.add('999')
@@ -225,9 +238,12 @@ class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):
         with patch('services.skill_video_service.generate_skill_search_topics', topics), \
              patch('services.skill_video_service.achieveup_course_descriptions_collection', descriptions), \
              patch('services.skill_video_service.achieveup_question_skills_collection', mappings):
-            await skill_video_service.generate_ai_video_recommendations('t', '100', 'Loops', matrix_id='m-999')
+            result = await skill_video_service.generate_ai_video_recommendations('t', '100', 'Loops', matrix_id='m-999')
         course_name = topics.await_args.args[1]
         self.assertEqual(course_name, 'Intro Programming')
+        # The AI error text is logged, not sent to the client.
+        self.assertEqual(result['statusCode'], 502)
+        self.assertNotIn('stop here', str(result))
 
     async def test_own_and_unknown_matrix_ids_are_kept(self):
         # 'primary' and deleted matrices have no matrix document, but videos
@@ -324,7 +340,7 @@ class SkillVideoRouteInputTest(unittest.IsolatedAsyncioTestCase):
             ('/achieveup/skill-videos/get', {'course_id': '100', 'skill_name': 'Loops'},
              ['course_id', 'skill_name', 'matrix_id'], 'get_skill_videos'),
             ('/achieveup/skill-videos', add_body,
-             ['course_id', 'skill_name', 'link', 'matrix_id', 'title', 'channel', 'thumbnail', 'source'],
+             ['course_id', 'skill_name', 'link', 'matrix_id', 'title'],
              'add_skill_video'),
             ('/achieveup/skill-videos/suggest', {'course_id': '100', 'skill_name': 'Loops'},
              ['course_id', 'skill_name', 'matrix_id'], 'generate_ai_video_recommendations'),
@@ -337,6 +353,13 @@ class SkillVideoRouteInputTest(unittest.IsolatedAsyncioTestCase):
                         response, service = await self.post(path, {**base, field: bad_value}, service_name)
                         self.assertEqual(response.status_code, 400)
                         service.assert_not_called()
+
+    async def test_add_ignores_caller_channel_thumbnail_and_source(self):
+        body = {'course_id': '100', 'skill_name': 'Loops', 'link': CLEAN_LINK, 'title': 'x',
+                'channel': 'Evil', 'thumbnail': 'javascript:alert(1)', 'source': 'ai_suggested'}
+        response, service = await self.post('/achieveup/skill-videos', body, 'add_skill_video')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(service.await_args.kwargs, {'matrix_id': None, 'title': 'x'})
 
     async def test_edit_route_is_gone(self):
         from app import app

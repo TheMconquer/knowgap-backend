@@ -346,5 +346,5 @@ async def fetch_video_transcript(video_id_or_url, languages=['en']):
         logging.error(f"Error fetching transcript for video {video_id_or_url}: {e}")
         return {
             'success': False,
-            'error': f'Failed to fetch transcript: {str(e)}'
+            'error': 'Failed to fetch transcript'
         }

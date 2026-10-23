@@ -103,17 +103,13 @@ async def add_skill_video_route():
 
         if not course_id or not skill_name or not link:
             return jsonify({'error': 'Missing required fields', 'message': 'course_id, skill_name and link are required', 'statusCode': 400}), 400
-        optional_fields = [data.get(field) for field in ('matrix_id', 'title', 'channel', 'thumbnail', 'source')]
-        if not _all_text(course_id, skill_name, link, *optional_fields):
+        if not _all_text(course_id, skill_name, link, data.get('matrix_id'), data.get('title')):
             return _not_text_response()
 
         result = await add_skill_video(
             token, course_id, skill_name, link,
             matrix_id=data.get('matrix_id'),
             title=data.get('title'),
-            channel=data.get('channel'),
-            thumbnail=data.get('thumbnail'),
-            source=data.get('source', 'manual'),
         )
         return _result_response(result, success_status=201)
 
