@@ -124,6 +124,9 @@ def snippet(**overrides):
         **overrides}}]}
 
 
+API_KEY = 'secret-api-key'
+
+
 class VideoMetadataTest(unittest.IsolatedAsyncioTestCase):
     async def lookup(self, outcome):
         sessions = []
@@ -153,12 +156,17 @@ class VideoMetadataTest(unittest.IsolatedAsyncioTestCase):
                 result, _ = await self.lookup((200, body))
                 self.assertEqual(result, {'error': youtube_utils.VIDEO_NOT_FOUND})
 
-    async def test_youtube_error_status_is_an_error(self):
-        result, _ = await self.lookup((403, {}))
-        self.assertEqual(result, {'error': 'Failed to fetch metadata, status code: 403'})
+    async def test_youtube_error_reply_gives_its_reason(self):
+        quota = {'error': {'code': 403, 'errors': [{'reason': 'quotaExceeded'}]}}
+        result, _ = await self.lookup((403, quota))
+        self.assertEqual(result, {'error': 'Failed to fetch metadata, status code: 403, reason: quotaExceeded'})
+        result, _ = await self.lookup((500, 'not an object'))
+        self.assertEqual(result, {'error': 'Failed to fetch metadata, status code: 500, reason: unknown'})
 
     async def test_failed_lookups_are_logged_instead_of_raising(self):
         for outcome in [
+            # aiohttp puts the request URL, API key included, in some errors.
+            aiohttp.ClientError(f"url='https://www.googleapis.com/youtube/v3/videos?key={API_KEY}'"),
             aiohttp.ClientConnectionError('no route to host'),
             asyncio.TimeoutError(),
             (200, ['not', 'an', 'object']),
@@ -166,9 +174,10 @@ class VideoMetadataTest(unittest.IsolatedAsyncioTestCase):
             (200, snippet(title=None)),
         ]:
             with self.subTest(outcome=outcome):
-                with self.assertLogs(level='ERROR'):
+                with self.assertLogs(level='ERROR') as logs:
                     result, _ = await self.lookup(outcome)
                 self.assertEqual(result, {'error': 'Failed to fetch metadata'})
+                self.assertNotIn(API_KEY, str(logs.output))
 
 
 class SkillVideoAccessTest(unittest.IsolatedAsyncioTestCase):

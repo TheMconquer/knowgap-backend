@@ -243,6 +243,16 @@ VIDEO_NOT_FOUND = "Video not found"
 _METADATA_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
+async def _youtube_error_reason(response):
+    """YouTube's short reason for an error reply (such as quotaExceeded or
+    keyInvalid), or "unknown"."""
+    try:
+        body = await response.json(content_type=None)
+        return str(body["error"]["errors"][0]["reason"])[:100]
+    except Exception:
+        return "unknown"
+
+
 async def get_video_metadata(youtube_url):
     """Retrieves metadata for a YouTube video by URL asynchronously.
 
@@ -259,7 +269,8 @@ async def get_video_metadata(youtube_url):
         async with aiohttp.ClientSession(timeout=_METADATA_TIMEOUT) as session:
             async with session.get(api_url) as response:
                 if response.status != 200:
-                    return {"error": f"Failed to fetch metadata, status code: {response.status}"}
+                    reason = await _youtube_error_reason(response)
+                    return {"error": f"Failed to fetch metadata, status code: {response.status}, reason: {reason}"}
                 response_data = await response.json()
 
         if not response_data.get("items"):
@@ -274,7 +285,9 @@ async def get_video_metadata(youtube_url):
             "thumbnail": thumbnail.get("url", ""),
         }
     except Exception as e:
-        logging.error(f"Error fetching metadata for video {video_id}: {type(e).__name__}: {e}")
+        # Only the error type: aiohttp's error text can include the request
+        # URL, which carries the API key.
+        logging.error(f"Error fetching metadata for video {video_id}: {type(e).__name__}")
         return {"error": "Failed to fetch metadata"}
 
 
