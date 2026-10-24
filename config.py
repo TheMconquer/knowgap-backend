@@ -52,6 +52,11 @@ class Config:
     FRONTEND_URL = os.getenv("FRONTEND_URL", "https://achieveupapp.com").rstrip("/")
     FRONTEND_HOSTING_URL = os.getenv("FRONTEND_HOSTING_URL", FRONTEND_URL).rstrip("/")
 
+    # True on Heroku, which sets DYNO on every dyno. Heroku's router passes on
+    # the visitor's address and scheme in X-Forwarded-* headers; anywhere else
+    # those headers come straight from the client, so they're ignored.
+    BEHIND_PROXY = bool(os.getenv("DYNO"))
+
     # Canvas API Configuration
 
     #AI configuration

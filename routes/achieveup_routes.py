@@ -1,4 +1,5 @@
 from quart import Blueprint, request, jsonify
+from quart_rate_limiter import rate_limit
 import asyncio
 from services.achieveup_service import (
     create_skill_matrix,
@@ -14,6 +15,7 @@ from services.achieveup_service import (
     update_course_channels
 )
 import logging
+from utils.rate_limits import PAID_API_LIMITS
 
 achieveup_bp = Blueprint('achieveup', __name__)
 logger = logging.getLogger(__name__)
@@ -614,6 +616,7 @@ async def get_channels_endpoint(course_id):
 
 
 @achieveup_bp.route('/achieveup/instructor/courses/<course_id>/channels', methods=['PUT'])
+@rate_limit(limits=PAID_API_LIMITS)
 async def update_channels_endpoint(course_id):
     """
     Save or update preferred YouTube channels for a course.
@@ -675,6 +678,7 @@ async def update_channels_endpoint(course_id):
         }), 500
 
 @achieveup_bp.route('/achieveup/instructor/course/<course_id>/force-sync', methods=['POST'])
+@rate_limit(limits=PAID_API_LIMITS)
 async def instructor_force_sync_route(course_id):
     """Force a data sync for a specific course (instructor only).
     Triggers Canvas submission fetch → mastery update → progress update immediately."""
@@ -762,6 +766,7 @@ async def instructor_dashboard_route():
 
 
 @achieveup_bp.route('/achieveup/ai/suggest-skills', methods=['POST'])
+@rate_limit(limits=PAID_API_LIMITS)
 async def achieveup_ai_suggest_skills_route():
     """AI-powered skill suggestions for course (frontend-requested endpoint). (AchieveUp only)"""
     try:
@@ -855,6 +860,7 @@ async def achieveup_ai_suggest_skills_route():
         }), 500
 
 @achieveup_bp.route('/achieveup/ai/analyze-questions', methods=['POST'])
+@rate_limit(limits=PAID_API_LIMITS)
 async def achieveup_ai_analyze_questions_route():
     """AI-powered question analysis (frontend-requested endpoint). (AchieveUp only)"""
     try:
