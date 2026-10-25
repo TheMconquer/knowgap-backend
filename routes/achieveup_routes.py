@@ -17,6 +17,11 @@ from services.achieveup_service import (
 import logging
 from utils.rate_limits import PAID_API_LIMITS
 
+# The rate limit counts requests, but analysis makes one OpenAI call per 20
+# questions, so an uncapped list would let one request make hundreds of
+# calls. Far above any real quiz.
+MAX_QUESTIONS_PER_ANALYSIS = 500
+
 achieveup_bp = Blueprint('achieveup', __name__)
 logger = logging.getLogger(__name__)
 
@@ -899,6 +904,9 @@ async def achieveup_ai_analyze_questions_route():
             validation_errors.append("questions array is required")
         elif len(questions) == 0:
             validation_errors.append("questions array cannot be empty")
+        elif len(questions) > MAX_QUESTIONS_PER_ANALYSIS:
+            validation_errors.append(
+                f"questions array cannot have more than {MAX_QUESTIONS_PER_ANALYSIS} questions")
         
         # courseId is checked by the service, which needs it to confirm the
         # caller teaches the course. quizId is optional.

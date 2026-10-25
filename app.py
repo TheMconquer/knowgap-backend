@@ -40,6 +40,7 @@ app = cors(app,
     ],
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    expose_headers=["Retry-After"],  # how long a rate-limited caller should wait
     allow_credentials=False,
     max_age=3600
 )

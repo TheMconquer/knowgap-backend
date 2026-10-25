@@ -7,7 +7,7 @@ import jwt
 from config import Config
 from services.achieveup_auth_service import JWT_ALGORITHM, JWT_SECRET
 from utils import rate_limits
-from utils.rate_limits import ExpiringMemoryStore, PAID_API_LIMITS
+from utils.rate_limits import CREDENTIAL_CHECK_LIMITS, ExpiringMemoryStore, PAID_API_LIMITS
 
 LOGIN_FAILED = {'error': 'Invalid email or password', 'statusCode': 401}
 
@@ -18,13 +18,24 @@ def token_for(user_id, **claims):
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+class FrozenDatetime(datetime):
+    """The limiter frees a slot as time passes, so on a slow machine a burst
+    could stay under a limit. The tests stop the limiter's clock instead."""
+    frozen_at = datetime.now(timezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.frozen_at
+
+
 class RateLimitTest(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         # A fresh store per test, so counts from other tests don't carry over.
-        patcher = patch.object(rate_limits.limiter, 'store', ExpiringMemoryStore())
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for patcher in (patch.object(rate_limits.limiter, 'store', ExpiringMemoryStore()),
+                        patch('quart_rate_limiter.datetime', FrozenDatetime)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     async def login(self, email, headers=None):
         from app import app
@@ -43,6 +54,17 @@ class RateLimitTest(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(int(response.headers['Retry-After']), 0)
         # Another account from the same address is unaffected.
         self.assertEqual((await self.login('bob@ucf.edu')).status_code, 401)
+
+    async def test_malformed_login_body_reaches_the_route(self):
+        # The email key reads the body before the route does. A body that
+        # isn't UTF-8 or is nested too deeply must still get the route's own
+        # JSON answer, not an unhandled error.
+        from app import app
+        for body in ('{"email": "a@ucf.edu"}'.encode('utf-16'), b'[' * 200000 + b']' * 200000):
+            with self.subTest(body=body[:10]), self.assertLogs('routes.auth_routes', 'ERROR'):
+                response = await app.test_client().post(
+                    '/auth/login', data=body, headers={'Content-Type': 'application/json'})
+                self.assertEqual((await response.get_json())['statusCode'], response.status_code)
 
     async def test_login_email_ignores_case_and_spaces(self):
         for _ in range(10):
@@ -95,8 +117,8 @@ class RateLimitTest(unittest.IsolatedAsyncioTestCase):
     async def test_spoofed_forwarded_for_does_not_escape_ip_limit(self):
         # The client controls every X-Forwarded-For entry except the last,
         # which Heroku's router adds.
-        for i in range(60):
-            self.assertEqual((await self.signup(f'6.6.{i}.1, 1.2.3.4')).status_code, 201)
+        for i in range(300):
+            self.assertEqual((await self.signup(f'6.6.{i % 250}.{i // 250}, 1.2.3.4')).status_code, 201)
         self.assertEqual((await self.signup('6.6.200.1, 1.2.3.4')).status_code, 429)
         self.assertEqual((await self.signup('5.6.7.8')).status_code, 201)
 
@@ -128,6 +150,32 @@ class RateLimitTest(unittest.IsolatedAsyncioTestCase):
                 async with app.test_request_context(
                         '/', headers={'Authorization': header, 'Remote-Addr': '10.0.0.9'}):
                     self.assertEqual(await user_key(), 'ip:10.0.0.9')
+
+    def test_credential_routes_are_limited(self):
+        from app import app
+        for endpoint in ('auth.achieveup_change_password_route',
+                         'auth.achieveup_update_profile_route',
+                         'auth.validate_canvas_token_route'):
+            with self.subTest(endpoint=endpoint):
+                limits = getattr(app.view_functions[endpoint], '_quart_rate_limiter_limits', [])
+                self.assertEqual(limits, CREDENTIAL_CHECK_LIMITS)
+
+    async def test_analysis_question_count_is_capped(self):
+        # Each request is rate limited, but each 20 questions is an OpenAI call.
+        from app import app
+        from routes.achieveup_routes import MAX_QUESTIONS_PER_ANALYSIS
+        analyze = AsyncMock(return_value={'analyses': []})
+        with patch('services.achieveup_service.analyze_questions_with_ai', analyze):
+            for count, expected in ((MAX_QUESTIONS_PER_ANALYSIS, 200),
+                                    (MAX_QUESTIONS_PER_ANALYSIS + 1, 400)):
+                with self.subTest(count=count):
+                    questions = [{'id': i, 'question_text': 'q'} for i in range(count)]
+                    response = await app.test_client().post(
+                        '/achieveup/ai/analyze-questions',
+                        json={'courseId': '100', 'questions': questions},
+                        headers={'Authorization': f"Bearer {token_for('u1')}"})
+                    self.assertEqual(response.status_code, expected)
+        analyze.assert_awaited_once()
 
     def test_paid_routes_are_limited(self):
         from app import app

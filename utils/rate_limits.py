@@ -46,7 +46,12 @@ async def email_ip_key():
     """The email being logged in to, from this address. Counting per email
     alone would let anyone who knows an email keep that account locked out;
     counting per email and address only slows the person guessing."""
-    data = await request.get_json(silent=True)
+    try:
+        data = await request.get_json(silent=True)
+    except (ValueError, RecursionError):
+        # silent only covers malformed JSON. A body that isn't UTF-8, or is
+        # nested too deeply, still raises; the route rejects it either way.
+        data = None
     email = data.get('email') if isinstance(data, dict) else None
     if isinstance(email, str) and email.strip():
         # Hashed so the key stays short and the address isn't held in memory.
@@ -95,8 +100,9 @@ LOGIN_LIMITS = [
     RateLimit(10, MINUTE, email_ip_key),
     RateLimit(60, HOUR, email_ip_key),
 ]
-SIGNUP_LIMITS = [RateLimit(60, MINUTE, ip_key)]
-# Password change and Canvas token checks: each attempt is a guess.
+SIGNUP_LIMITS = [RateLimit(300, MINUTE, ip_key)]
+# Password change, profile update and Canvas token checks: each attempt
+# guesses a password or tests a Canvas token.
 CREDENTIAL_CHECK_LIMITS = [
     RateLimit(10, MINUTE, user_key),
     RateLimit(60, HOUR, user_key),

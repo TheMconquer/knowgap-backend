@@ -40,6 +40,11 @@ class ProfileUpdateRequest(BaseModel):
     canvasTokenType: StrictStr | None = None
 
 
+class CanvasTokenCheckRequest(BaseModel):
+    canvasApiToken: StrictStr | None = None
+    canvasTokenType: StrictStr | None = None
+
+
 def _parse_text_fields(model, data):
     """Return the body as `model`, or None if it isn't an object of text fields."""
     try:
@@ -183,6 +188,7 @@ async def achieveup_me_route():
         }), 500
 
 @auth_bp.route('/auth/profile', methods=['PUT'])
+@rate_limit(limits=CREDENTIAL_CHECK_LIMITS)
 async def achieveup_update_profile_route():
     """Update user profile information including Canvas API token. (AchieveUp only)"""
     try:
@@ -245,7 +251,7 @@ async def achieveup_update_profile_route():
 @rate_limit(limits=CREDENTIAL_CHECK_LIMITS)
 async def validate_canvas_token_route():
     """Check a Canvas API token before saving it in Settings. Needs a login,
-    so the route can't be used to test tokens anonymously. (AchieveUp only)"""
+    and each user's checks are rate limited. (AchieveUp only)"""
     try:
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
@@ -272,8 +278,12 @@ async def validate_canvas_token_route():
                 'statusCode': 400
             }), 400
         
-        canvas_api_token = data.get('canvasApiToken')
-        canvas_token_type = data.get('canvasTokenType', 'student')
+        body = _parse_text_fields(CanvasTokenCheckRequest, data)
+        if body is None:
+            return not_text_response()
+
+        canvas_api_token = body.canvasApiToken
+        canvas_token_type = body.canvasTokenType or 'student'
         
         if not canvas_api_token:
             return jsonify({

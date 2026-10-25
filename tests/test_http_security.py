@@ -1,7 +1,14 @@
+import os
+import subprocess
+import sys
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from werkzeug.datastructures import Headers
+
 from config import Config
+from utils import rate_limits
+from utils.rate_limits import ExpiringMemoryStore
 
 FRONTEND = Config.FRONTEND_URL
 OTHER_SITE = 'https://evil.example'
@@ -51,6 +58,41 @@ class CorsTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('authorization', allowed_headers)
         self.assertIn('content-type', allowed_headers)
         self.assertEqual(response.headers.get('Access-Control-Max-Age'), '3600')
+
+    async def test_preflight_for_put_and_delete(self):
+        # The frontend updates and deletes with PUT and DELETE.
+        from app import app
+        for method in ('PUT', 'DELETE'):
+            with self.subTest(method=method):
+                response = await app.test_client().options('/achieveup/matrix/abc', headers={
+                    'Origin': FRONTEND, 'Access-Control-Request-Method': method,
+                    'Access-Control-Request-Headers': 'authorization,content-type'})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers.get('Access-Control-Allow-Origin'), FRONTEND)
+                self.assertIn(method, response.headers.get('Access-Control-Allow-Methods', ''))
+
+    async def test_frontend_can_read_retry_after(self):
+        response = await self.get(Origin=FRONTEND)
+        self.assertEqual(response.headers.get('Access-Control-Expose-Headers'), 'Retry-After')
+
+    def test_frontend_urls_ignore_spaces_and_empty_values(self):
+        # A stray space or an empty value would otherwise block the real
+        # frontend, since the allow-list has to match exactly.
+        backend = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cases = {
+            ('', ''): 'https://achieveupapp.com https://achieveupapp.com',
+            ('  ', ' '): 'https://achieveupapp.com https://achieveupapp.com',
+            (' https://a.example/ ', ''): 'https://a.example https://a.example',
+            ('https://a.example', 'https://b.example/'): 'https://a.example https://b.example',
+        }
+        for (url, hosting_url), expected in cases.items():
+            with self.subTest(url=url, hosting_url=hosting_url):
+                result = subprocess.run(
+                    [sys.executable, '-c',
+                     'from config import Config; print(Config.FRONTEND_URL, Config.FRONTEND_HOSTING_URL)'],
+                    cwd=backend, capture_output=True, text=True, check=True,
+                    env={**os.environ, 'FRONTEND_URL': url, 'FRONTEND_HOSTING_URL': hosting_url})
+                self.assertEqual(result.stdout.strip(), expected)
 
     async def test_preflight_from_other_site(self):
         from app import app
@@ -143,6 +185,28 @@ class HttpsRedirectTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers['Location'], 'https://localhost/auth/login')
         login.assert_not_awaited()
 
+    async def test_redirect_keeps_the_exact_path_and_query(self):
+        # The server sees the path as the client sent it in raw_path; the
+        # test client would decode %2F before the app saw it.
+        response = await self.send('get', '/achieveup/matrix/a%2Fb?d=%E2%9C%93', 'http',
+                                   scope_base={'raw_path': b'/achieveup/matrix/a%2Fb'})
+        self.assertEqual(response.headers['Location'],
+                         'https://localhost/achieveup/matrix/a%2Fb?d=%E2%9C%93')
+
+    async def test_redirected_requests_are_not_rate_limited(self):
+        # The redirect runs first, so plain-HTTP requests that never reach a
+        # route don't use up the visitor's limit.
+        failed = AsyncMock(return_value={'error': 'Invalid email or password', 'statusCode': 401})
+        with patch.object(rate_limits.limiter, 'store', ExpiringMemoryStore()), \
+             patch('routes.auth_routes.achieveup_login', failed):
+            for _ in range(12):
+                response = await self.send('post', '/auth/login', 'http',
+                                           json={'email': 'order@ucf.edu', 'password': 'x'})
+                self.assertEqual(response.status_code, 308)
+            response = await self.send('post', '/auth/login', 'https',
+                                       json={'email': 'order@ucf.edu', 'password': 'x'})
+        self.assertEqual(response.status_code, 401)
+
     async def test_redirect_ignores_forwarded_host(self):
         # Heroku doesn't set X-Forwarded-Host, so any value is the client's
         # and must not choose where the redirect goes.
@@ -177,13 +241,13 @@ class HttpsRedirectTest(unittest.IsolatedAsyncioTestCase):
 class ClientIpTest(unittest.IsolatedAsyncioTestCase):
     """The connection itself comes from 10.0.0.9 (Heroku's router, on Heroku)."""
 
-    async def client_ip(self, behind_proxy, forwarded_for=None):
+    async def client_ip(self, behind_proxy, *forwarded_for):
         from app import app
         from utils.security_utils import client_ip
         # The ASGI layer normally sets Remote-Addr from the connection.
-        headers = {'Remote-Addr': '10.0.0.9'}
-        if forwarded_for:
-            headers['X-Forwarded-For'] = forwarded_for
+        headers = Headers({'Remote-Addr': '10.0.0.9'})
+        for line in forwarded_for:
+            headers.add('X-Forwarded-For', line)
         with patch.object(Config, 'BEHIND_PROXY', behind_proxy):
             async with app.test_request_context('/', headers=headers):
                 return client_ip()
@@ -191,6 +255,10 @@ class ClientIpTest(unittest.IsolatedAsyncioTestCase):
     async def test_heroku_uses_routers_entry(self):
         self.assertEqual(await self.client_ip(True, '6.6.6.6, 1.2.3.4'), '1.2.3.4')
         self.assertEqual(await self.client_ip(True, '1.2.3.4'), '1.2.3.4')
+
+    async def test_heroku_reads_every_header_line(self):
+        self.assertEqual(await self.client_ip(True, '6.6.6.6', '1.2.3.4'), '1.2.3.4')
+        self.assertEqual(await self.client_ip(True, '6.6.6.6, 1.2.3.4, '), '1.2.3.4')
 
     async def test_heroku_without_forwarded_for_uses_connection(self):
         self.assertEqual(await self.client_ip(True), '10.0.0.9')

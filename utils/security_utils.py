@@ -1,6 +1,5 @@
-from urllib.parse import urlsplit, urlunsplit
-
 from quart import redirect, request
+from werkzeug.urls import iri_to_uri
 
 from config import Config
 
@@ -42,9 +41,21 @@ async def _redirect_plain_http():
     # 308 keeps the method and body, so a POST is retried as a POST. Only
     # Heroku says which scheme the visitor used; locally nothing redirects.
     if _forwarded_scheme() == 'http':
-        url = urlsplit(request.url)
-        return redirect(urlunsplit(url._replace(scheme='https')), 308)
+        return redirect(f'https://{request.host}{_raw_target()}', 308)
     return None
+
+
+def _raw_target():
+    """The path and query exactly as the client sent them. request.url is
+    rebuilt from the decoded path, which would turn %2F into a real slash."""
+    path = request.scope.get('raw_path') or b''
+    if not path.startswith(b'/'):
+        # Absolute-form request line ("GET http://host/x") or no raw path.
+        path = iri_to_uri(request.path).encode('ascii')
+    target = path.decode('latin-1')
+    if request.query_string:
+        target += '?' + request.query_string.decode('latin-1')
+    return target
 
 
 async def _add_security_headers(response):
