@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from services import achieveup_canvas_service as canvas_service
 from services import achieveup_service
@@ -252,6 +252,40 @@ class SkillMatrixAccessTest(unittest.IsolatedAsyncioTestCase):
         result = await self.analyze('100', 'm-own')
         self.assertEqual(result['statusCode'], 403)
         self.ai.assert_not_awaited()
+
+    # AI skill suggestions
+    async def suggest(self, course_id):
+        """Run skill suggestions up to creating the OpenAI client, which
+        stops the run, so a test can tell whether OpenAI would be called."""
+        self.openai = MagicMock(side_effect=RuntimeError('stop before OpenAI'))
+        with patch('openai.AsyncOpenAI', self.openai), patch('traceback.print_exc'):
+            return await achieveup_service.suggest_course_skills_ai(
+                't', {'courseId': course_id, 'courseName': 'Intro', 'courseCode': 'COP1000'})
+
+    async def test_suggest_skills_in_own_course(self):
+        await self.suggest('100')
+        self.openai.assert_called_once()
+
+    async def test_suggest_skills_in_past_course(self):
+        # Nothing is saved, and the matrix creator lists past courses too.
+        await self.suggest('50')
+        self.openai.assert_called_once()
+
+    async def test_suggest_skills_denied_for_other_course(self):
+        result = await self.suggest('999')
+        self.assertEqual(result['statusCode'], 403)
+        self.openai.assert_not_called()
+
+    async def test_suggest_skills_denied_without_course(self):
+        result = await self.suggest(None)
+        self.assertEqual(result['statusCode'], 400)
+        self.openai.assert_not_called()
+
+    async def test_suggest_skills_denied_for_student(self):
+        self.user = STUDENT
+        result = await self.suggest('100')
+        self.assertEqual(result['statusCode'], 403)
+        self.openai.assert_not_called()
 
 
 class SkillMappingAccessTest(unittest.IsolatedAsyncioTestCase):
