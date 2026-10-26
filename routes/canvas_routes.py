@@ -217,9 +217,6 @@ async def instructor_course_quizzes_route(course_id):
 async def instructor_quiz_questions_route(course_id, quiz_id):
     """Get all questions in a quiz (instructor token required)."""
     try:
-        #debugging 
-        logger.info(f"star route called: /canvas/instructor/courses/{course_id}/quizzes/{quiz_id}/questions")
-
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
             return jsonify({'error': 'Missing token', 'message': 'Authorization header with Bearer token is required', 'statusCode': 401}), 401
@@ -228,14 +225,6 @@ async def instructor_quiz_questions_route(course_id, quiz_id):
         user, error = await require_instructor(token)
         if error:
             return jsonify(error), error['statusCode']
-
-        #course_id = request.args.get('course_id')
-
-        #debugging
-        logger.info(f"star course_id from query params: {course_id}")
-        if not course_id:
-            return jsonify({'error': 'Missing Course_id', 'message': 'course_id query paramenter required', 'statusCode': 400}), 400
-
         canvas_token = await get_user_canvas_token(user['id'])
         if not canvas_token:
             return jsonify({'error': 'No Canvas token', 'message': 'No Canvas API token found for user', 'statusCode': 400}), 400

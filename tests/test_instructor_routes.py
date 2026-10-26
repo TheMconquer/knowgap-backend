@@ -85,6 +85,16 @@ class InstructorRoutesTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 403)
                 self.services[service].assert_not_awaited()
 
+    async def test_student_role_with_instructor_canvas_token_is_denied(self):
+        # Older signups could leave role 'student' with an instructor Canvas
+        # token; like every other instructor route, these need both.
+        self.user = {**STUDENT, 'canvasTokenType': 'instructor'}
+        for path, service, _ in ROUTES:
+            with self.subTest(path=path):
+                response = await app.test_client().get(path, headers=AUTH)
+                self.assertEqual(response.status_code, 403)
+                self.services[service].assert_not_awaited()
+
     async def test_missing_or_invalid_token_is_rejected(self):
         for path, service, _ in ROUTES:
             for headers in ({}, {'Authorization': 'Bearer wrong'}):
