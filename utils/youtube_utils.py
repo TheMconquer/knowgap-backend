@@ -2,11 +2,14 @@
 from youtubesearchpython import VideosSearch
 import re
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from config import Config
 import aiohttp
 import asyncio
 import html
 import logging
+import threading
+from urllib.parse import parse_qs, urlsplit
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
 
@@ -22,6 +25,114 @@ def clean_metadata_text(text: str) -> str:
     """
     return html.unescape(text)
 
+# One client per worker thread: built once instead of on every call, and
+# not shared across threads because its HTTP transport isn't thread-safe.
+_youtube_clients = threading.local()
+
+
+def get_youtube_client():
+    """Return this thread's YouTube API client, building it on first use.
+    Call it inside asyncio.to_thread so the build stays off the event loop."""
+    if not hasattr(_youtube_clients, 'client'):
+        _youtube_clients.client = build(
+            'youtube', 'v3', developerKey=Config.YOUTUBE_API_KEY)
+    return _youtube_clients.client
+
+
+async def resolve_channel(channel_identifier: str) -> dict | None:
+    """
+    Resolves a channel handle (e.g., '@AmoebaSisters', '@crashcourse')
+    or channel ID (starts with 'UC') to an ID YouTube confirms exists.
+    Returns {'channel_id', 'name'}, or None if there's no such channel;
+    raises if the lookup fails.
+    """
+    clean_id = channel_identifier.strip()
+
+    # Look up UC... channel IDs too, so a made-up ID isn't accepted
+    if clean_id.startswith('UC') and len(clean_id) == 24:
+        lookup = {'id': clean_id}
+    else:
+        # Ensure handle format (e.g., '@AmoebaSisters')
+        handle = clean_id if clean_id.startswith('@') else f"@{clean_id}"
+        lookup = {'forHandle': handle}
+    try:
+
+        # Run the synchronous function in a thread pool to make it async-friendly
+
+        def fetch_channel_id():
+            return get_youtube_client().channels().list(
+                part='id,snippet',
+                **lookup
+            ).execute()
+        response = await asyncio.to_thread(fetch_channel_id)
+
+        items = response.get('items', [])
+        if items:
+            return {'channel_id': items[0]['id'],
+                    'name': items[0]['snippet']['title']}
+
+        return None
+
+    except HttpError as e:
+        logging.error(f"HTTP Error resolving handle '{channel_identifier}': "
+                      f"{e.resp.status} {e.reason} {e.error_details}")
+        raise
+    except Exception as e:
+        logging.error(f"Error resolving channel handle '{channel_identifier}': {e}")
+        raise
+
+
+async def fetch_videos_for_topic_and_channel(topic: str, channel_id: str, limit: int = 3) -> list[dict]:
+    """
+    Fetch candidate videos for a given topic from a specific YouTube channel
+    using the official YouTube Data API v3. `channel_id` is the saved,
+    already-resolved channel ID (UC...).
+    """
+    try:
+        logging.debug(f"Starting API search for topic: {topic} in channel: {channel_id} (limit={limit})")
+
+        # Run the synchronous function in a thread pool to make it async-friendly
+        def fetch_videos():
+            search_response = get_youtube_client().search().list(
+                q=topic,
+                channelId=channel_id,  # Strictly restricts search to this channel
+                type='video',          # Only retrieve videos
+                part='id,snippet',
+                maxResults=limit
+            ).execute()
+            results = search_response.get('items', [])
+            return results
+
+        results = await asyncio.to_thread(fetch_videos)
+
+        if not results:
+            logging.warning(f"No results found for topic '{topic}' in channel '{channel_id}'")
+            return []
+
+        videos = []
+        for item in results:
+            video_id = item['id']['videoId']
+            snippet = item['snippet']
+
+            videos.append({
+                'title': clean_metadata_text(snippet.get('title', 'No Title Found')),
+                'link': f"https://www.youtube.com/watch?v={video_id}",
+                'channel': snippet.get('channelTitle', 'No Channel Found'),
+                'thumbnail': (snippet.get('thumbnails', {})
+                              .get('high', {}).get('url', ''))
+            })
+
+        logging.debug(f"Extracted {len(videos)} videos for topic '{topic}' in channel '{channel_id}'")
+        return videos
+
+    except HttpError as e:
+        logging.error(f"YouTube API HttpError for topic '{topic}' in channel "
+                      f"'{channel_id}': {e.resp.status} {e.reason} "
+                      f"{e.error_details}")
+        return []
+    except Exception as e:
+        logging.error(f"Unexpected error fetching videos: {e}")
+        return []
 
 async def fetch_videos_for_topic(topic, limit=3):
     """
@@ -72,8 +183,81 @@ def extract_video_id(youtube_url):
     return video_id
 
 
+_YOUTUBE_VIDEO_ID = re.compile(r'[0-9A-Za-z_-]{11}')
+_YOUTUBE_HOSTS = {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
+                  'youtube-nocookie.com', 'www.youtube-nocookie.com'}
+_YOUTUBE_ID_PATHS = {'shorts', 'embed', 'live', 'v'}
+_YOUTUBE_START_TIME = re.compile(r'(?:(\d{1,3})h)?(?:(\d{1,5})m)?(?:(\d{1,6})s?)?')
+
+
+def normalize_youtube_link(link):
+    """Return https://www.youtube.com/watch?v=<id> (plus the start time, if
+    one was given) for a link to a YouTube video, or None for anything else.
+
+    The link is rebuilt from the video id instead of being stored as typed,
+    so no other part of the input (a javascript: link, another site, or a URL
+    a browser would read differently from Python) ever reaches the page."""
+    if not isinstance(link, str):
+        return None
+    link = link.strip()
+    if '://' not in link:
+        link = 'https://' + link  # pasted without http(s)://
+    try:
+        parts = urlsplit(link)
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme not in ('http', 'https'):
+        return None
+
+    query = parse_qs(parts.query)
+    segments = parts.path.strip('/').split('/')
+    if host == 'youtu.be':
+        video_id = segments[0]
+    elif host in _YOUTUBE_HOSTS and parts.path.rstrip('/') == '/watch':
+        video_id = query.get('v', [''])[0]
+    elif host in _YOUTUBE_HOSTS and len(segments) >= 2 and segments[0] in _YOUTUBE_ID_PATHS:
+        video_id = segments[1]
+    else:
+        return None
+    if not _YOUTUBE_VIDEO_ID.fullmatch(video_id):
+        return None
+
+    normalized = f"https://www.youtube.com/watch?v={video_id}"
+    # Keep a start time like t=90, t=90s or t=1m30s (start=90 on embed links).
+    # Anything else, including absurdly long numbers, just drops the start time.
+    start = (query.get('t') or query.get('start') or [''])[0]
+    match = _YOUTUBE_START_TIME.fullmatch(start)
+    if start and match:
+        hours, minutes, seconds = (int(group or 0) for group in match.groups())
+        total = hours * 3600 + minutes * 60 + seconds
+        if total:
+            normalized += f"&t={total}s"
+    return normalized
+
+
+VIDEO_NOT_FOUND = "Video not found"
+
+# YouTube normally answers in well under a second; this only stops a stuck
+# request from hanging the caller.
+_METADATA_TIMEOUT = aiohttp.ClientTimeout(total=10)
+
+
+async def _youtube_error_reason(response):
+    """YouTube's short reason for an error reply (such as quotaExceeded or
+    keyInvalid), or "unknown"."""
+    try:
+        body = await response.json(content_type=None)
+        return str(body["error"]["errors"][0]["reason"])[:100]
+    except Exception:
+        return "unknown"
+
+
 async def get_video_metadata(youtube_url):
-    """Retrieves metadata for a YouTube video by URL asynchronously."""
+    """Retrieves metadata for a YouTube video by URL asynchronously.
+
+    Returns {"error": VIDEO_NOT_FOUND} when YouTube has no such video (or it's
+    private), and another {"error": ...} when YouTube couldn't be asked."""
     video_id = extract_video_id(youtube_url)
     if not video_id:
         return {"error": "Invalid YouTube URL"}
@@ -81,24 +265,30 @@ async def get_video_metadata(youtube_url):
     # YouTube API URL for getting video details
     api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={Config.YOUTUBE_API_KEY}"
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(api_url) as response:
-            if response.status == 200:
+    try:
+        async with aiohttp.ClientSession(timeout=_METADATA_TIMEOUT) as session:
+            async with session.get(api_url) as response:
+                if response.status != 200:
+                    reason = await _youtube_error_reason(response)
+                    return {"error": f"Failed to fetch metadata, status code: {response.status}, reason: {reason}"}
                 response_data = await response.json()
 
-                if "items" in response_data and len(response_data["items"]) > 0:
-                    video = response_data["items"][0]["snippet"]
-                    metadata = {
-                        "title": clean_metadata_text(video["title"]),
-                        "link" : youtube_url,
-                        "channel": video["channelTitle"],
-                        "thumbnail": video["thumbnails"]["high"]["url"],
-                    }
-                    return metadata
-                else:
-                    return {"error": "Video not found"}
-            else:
-                return {"error": f"Failed to fetch metadata, status code: {response.status}"}
+        if not response_data.get("items"):
+            return {"error": VIDEO_NOT_FOUND}
+        video = response_data["items"][0]["snippet"]
+        thumbnails = video.get("thumbnails") or {}
+        thumbnail = thumbnails.get("high") or thumbnails.get("medium") or thumbnails.get("default") or {}
+        return {
+            "title": clean_metadata_text(video["title"]),
+            "link": youtube_url,
+            "channel": video["channelTitle"],
+            "thumbnail": thumbnail.get("url", ""),
+        }
+    except Exception as e:
+        # Only the error type: aiohttp's error text can include the request
+        # URL, which carries the API key.
+        logging.error(f"Error fetching metadata for video {video_id}: {type(e).__name__}")
+        return {"error": "Failed to fetch metadata"}
 
 
 async def fetch_video_transcript(video_id_or_url, languages=['en']):
@@ -182,5 +372,5 @@ async def fetch_video_transcript(video_id_or_url, languages=['en']):
         logging.error(f"Error fetching transcript for video {video_id_or_url}: {e}")
         return {
             'success': False,
-            'error': f'Failed to fetch transcript: {str(e)}'
+            'error': 'Failed to fetch transcript'
         }

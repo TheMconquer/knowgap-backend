@@ -5,7 +5,7 @@ from quart_cors import cors
 from dotenv import load_dotenv
 from utils.encryption_utils import decrypt_token
 
-from services.canvas_submissions_service import sync_course_submissions_direct
+from services.sync_status_service import finish_sync, run_tracked_sync, try_start_sync
 from services.course_service import update_quiz_questions_per_course
 
 from routes.base_routes import init_base_routes
@@ -14,6 +14,8 @@ from routes.canvas_routes import canvas_bp
 from routes.achieveup_routes import achieveup_bp
 from routes.skill_video_routes import skill_video_bp
 from mongodb import get_db
+from utils.security_utils import init_security
+from utils.rate_limits import init_rate_limits
 
 from config import Config
 
@@ -25,8 +27,10 @@ logger = logging.getLogger(__name__)
 # Initialize Quart app
 app = Quart(__name__)
 
-# Configure CORS
-app = cors(app, 
+# Configure CORS. Only these sites may call the API from a browser; the
+# frontend sends its login token in the Authorization header, not a cookie,
+# so credentials aren't allowed.
+app = cors(app,
     allow_origin=[
         "http://localhost:3000",  # Allow AchieveUp frontend development
         "http://localhost:5001",  # Allow local API testing
@@ -36,32 +40,20 @@ app = cors(app,
     ],
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_credentials=True,
+    expose_headers=["Retry-After"],  # how long a rate-limited caller should wait
+    allow_credentials=False,
     max_age=3600
 )
-
-# Custom CORS middleware for additional headers
-@app.after_request
-async def after_request(response):
-    origin = request.headers.get("Origin")
-    if origin:
-        # Echo back the requesting origin
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Vary"] = "Origin"
-    else:
-        # Fallback for non-browser requests
-        response.headers["Access-Control-Allow-Origin"] = "*"
-
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization,Accept,Origin,X-Requested-With"
-    response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Max-Age"] = "3600"
-    return response
 
 # Log incoming requests
 @app.before_request
 async def log_request():
     logger.info("%s %s", request.method, request.path)
+
+# HTTPS redirect and security headers first, so a plain-HTTP request is
+# redirected before the rate limiter counts it.
+init_security(app)
+init_rate_limits(app)
 
 # Initialize routes first
 init_base_routes(app)
@@ -107,6 +99,18 @@ async def create_indexes():
         # Don't raise the exception - allow the app to continue running
         # The indexes will be created when MongoDB is available
 
+    # Separate block so a failure here can't skip the indexes above.
+    try:
+        course_channels_collection = db[
+            Config.ACHIEVEUP_COURSE_CHANNELS_COLLECTION]
+        await course_channels_collection.create_index(
+            [("course_id", 1), ("instructor_id", 1)],
+            unique=True,
+            name="course_instructor_unique_idx"
+        )
+    except Exception as e:
+        logger.error(f"Failed to create course channels index: {str(e)}")
+
 async def scheduled_update():
     logger.info("Scheduled update started")
     try:
@@ -135,14 +139,24 @@ async def scheduled_update():
                         logger.info("Processing AchieveUp course ID: %s for user_id %s", course_id, user.get('user_id'))
                         
                         try:
-                            # Sync data
-                            await update_quiz_questions_per_course(course_id, access_token, link)
-                            
-                            # Update mastery
-                            await sync_course_submissions_direct(access_token, course_id, official_course_name(course))
-                            
+                            # Skip a course whose sync is already running
+                            # (e.g. an instructor pressed Sync Now).
+                            if await try_start_sync(course_id, 'scheduled') is None:
+                                logger.info("Skipping course ID %s: a sync is already running", course_id)
+                                continue
+
+                            # Refresh quiz questions, then update mastery. The
+                            # refresh runs inside the tracked sync so its
+                            # heartbeat covers it too.
+                            async def refresh_questions(course_id=course_id, access_token=access_token):
+                                await update_quiz_questions_per_course(course_id, access_token, link)
+
+                            await run_tracked_sync(access_token, course_id, official_course_name(course),
+                                                   prepare=refresh_questions)
+
                         except Exception as course_error:
                             logger.error("Error processing course ID %s: %s", course_id, course_error)
+                            await finish_sync(course_id, 'The sync failed unexpectedly. Please try again.')
                         
                         # Rate limit safeguard: pause between courses
                         await asyncio.sleep(1)

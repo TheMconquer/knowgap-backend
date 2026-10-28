@@ -1,4 +1,5 @@
 from quart import Blueprint, request, jsonify
+from quart_rate_limiter import rate_limit
 import asyncio
 from services.achieveup_service import (
     create_skill_matrix,
@@ -9,9 +10,17 @@ from services.achieveup_service import (
     get_assigned_skills,
     delete_skill_matrix,  # Add new import
     get_course_description,
-    upsert_course_description
+    upsert_course_description,
+    get_course_channels,
+    update_course_channels
 )
 import logging
+from utils.rate_limits import PAID_API_LIMITS
+
+# The rate limit counts requests, but analysis makes one OpenAI call per 20
+# questions, so an uncapped list would let one request make hundreds of
+# calls. Far above any real quiz.
+MAX_QUESTIONS_PER_ANALYSIS = 500
 
 achieveup_bp = Blueprint('achieveup', __name__)
 logger = logging.getLogger(__name__)
@@ -334,7 +343,8 @@ async def get_assigned_skills_route():
 
 @achieveup_bp.route('/achieveup/badges/student/<student_id>/earned', methods=['GET'])
 async def get_student_earned_badges_route(student_id):
-    """Get all earned badges for a specific student with course information. (AchieveUp only)"""
+    """Get a student's earned badges with course information: all of them for the
+    student themself, or one course's (?course_id=) for an instructor of it. (AchieveUp only)"""
     try:
         # Get token from Authorization header
         auth_header = request.headers.get('Authorization')
@@ -572,8 +582,108 @@ async def get_student_progress_route(student_id, course_id):
             'statusCode': 500
         }), 500
 
+@achieveup_bp.route('/achieveup/instructor/courses/<course_id>/channels', methods=['GET'])
+async def get_channels_endpoint(course_id):
+    """
+    Retrieve configured YouTube channels for a course.
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+        channels = await get_course_channels(token, course_id)
+        if isinstance(channels, dict) and 'error' in channels:
+            return jsonify({
+                'error': channels['error'],
+                'message': channels.get('message', channels['error']),
+                'statusCode': channels.get('statusCode', 500)
+            }), channels.get('statusCode', 500)
+
+        return jsonify({
+            "success": True,
+            "course_id": str(course_id),
+            "channels": channels
+        }), 200
+    except Exception as e:
+        logger.error(f"Get course channels route error: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
+
+
+@achieveup_bp.route('/achieveup/instructor/courses/<course_id>/channels', methods=['PUT'])
+@rate_limit(limits=PAID_API_LIMITS)
+async def update_channels_endpoint(course_id):
+    """
+    Save or update preferred YouTube channels for a course.
+    Expected JSON Body: { "channels": ["@3Blue1Brown", "@freecodecamp"] }
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Missing token', 'message': 'Authorization header with Bearer token is required', 'statusCode': 401}), 401
+        token = auth_header.split(' ')[1]
+        data = await request.get_json(silent=True)
+
+        if data is None:
+            return jsonify({
+                'error': 'Invalid request',
+                'message': 'Request body must be valid JSON.',
+                'statusCode': 400
+            }), 400
+
+        if not isinstance(data, dict) or "channels" not in data:
+            return jsonify({
+                'error': 'Invalid request',
+                'message': "Missing 'channels' array in request body.",
+                'statusCode': 400
+            }), 400
+
+        channels_list = data.get("channels", [])
+        if not isinstance(channels_list, list):
+            return jsonify({
+                'error': 'Invalid request',
+                'message': ("'channels' must be a list of channel handles "
+                            "or IDs."),
+                'statusCode': 400
+            }), 400
+
+        result = await update_course_channels(token, course_id, channels_list)
+
+        if isinstance(result, dict) and 'error' in result:
+            return jsonify({
+                'error': result['error'],
+                'message': result.get('message', result['error']),
+                'statusCode': result.get('statusCode', 500)
+            }), result.get('statusCode', 500)
+
+        return jsonify({
+            "success": True,
+            "message": "Course channels updated successfully.",
+            "course_id": str(course_id),
+            "channels": result['channels']
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Update course channels route error: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
+            'statusCode': 500
+        }), 500
 
 @achieveup_bp.route('/achieveup/instructor/course/<course_id>/force-sync', methods=['POST'])
+@rate_limit(limits=PAID_API_LIMITS)
 async def instructor_force_sync_route(course_id):
     """Force a data sync for a specific course (instructor only).
     Triggers Canvas submission fetch → mastery update → progress update immediately."""
@@ -588,19 +698,13 @@ async def instructor_force_sync_route(course_id):
 
         token = auth_header.split(' ')[1]
 
-        # Verify instructor
-        from services.achieveup_auth_service import achieveup_verify_token, get_user_canvas_token
-        user_result = await achieveup_verify_token(token)
-        if 'error' in user_result:
-            return jsonify(user_result), user_result.get('statusCode', 401)
-
-        user = user_result['user']
-        if user.get('role') != 'instructor' or user.get('canvasTokenType') != 'instructor':
-            return jsonify({
-                'error': 'Forbidden',
-                'message': 'Instructor access required',
-                'statusCode': 403
-            }), 403
+        # The sync rebuilds the whole course's mastery from what the caller's
+        # Canvas token can see, so they must teach (or have taught) the course.
+        from services.achieveup_auth_service import get_user_canvas_token
+        from services.achieveup_service import require_course_instructor
+        user, error = await require_course_instructor(token, course_id, include_concluded=True)
+        if error:
+            return jsonify(error), error['statusCode']
 
         # Get the instructor's Canvas token
         canvas_token = await get_user_canvas_token(user['id'])
@@ -611,14 +715,25 @@ async def instructor_force_sync_route(course_id):
                 'statusCode': 400
             }), 400
 
-        # Run the sync in the background to avoid Heroku/Netlify timeouts
-        # The frontend will be notified that sync has started
-        from services.canvas_submissions_service import sync_course_submissions_direct
-        asyncio.create_task(sync_course_submissions_direct(canvas_token, course_id))
+        # Only one sync per course at a time; two would both add scores on
+        # top of each other.
+        from services.sync_status_service import try_start_sync, start_background_sync
+        sync_status = await try_start_sync(course_id, 'manual')
+        if sync_status is None:
+            return jsonify({
+                'error': 'Sync already running',
+                'message': 'A sync for this course is already running.',
+                'statusCode': 409
+            }), 409
+
+        # Run the sync in the background to avoid Heroku/Netlify timeouts.
+        # The frontend polls the sync-status route to learn when it finishes.
+        start_background_sync(canvas_token, course_id)
 
         return jsonify({
             'message': f'Sync started in background for course {course_id}. This may take a minute.',
             'status': 'processing',
+            'sync_status': sync_status,
             'details': {
                 'total_quizzes': 0,
                 'total_synced': 0,
@@ -633,6 +748,38 @@ async def instructor_force_sync_route(course_id):
         return jsonify({
             'error': 'Internal server error',
             'message': 'An unexpected error occurred during sync',
+            'statusCode': 500
+        }), 500
+
+@achieveup_bp.route('/achieveup/instructor/course/<course_id>/sync-status', methods=['GET'])
+async def instructor_sync_status_route(course_id):
+    """Status of the course's latest sync (instructor only). Polled by the
+    frontend while a sync runs: status is 'idle', 'running', 'done' or
+    'failed', with quizzes_done / quizzes_total while running."""
+    try:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': 'Missing token',
+                'message': 'Authorization header with Bearer token is required',
+                'statusCode': 401
+            }), 401
+
+        token = auth_header.split(' ')[1]
+
+        from services.achieveup_service import require_course_instructor
+        _, error = await require_course_instructor(token, course_id, include_concluded=True)
+        if error:
+            return jsonify(error), error['statusCode']
+
+        from services.sync_status_service import get_sync_status
+        return jsonify(await get_sync_status(course_id)), 200
+
+    except Exception as e:
+        logger.error(f"Sync status error: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred',
             'statusCode': 500
         }), 500
 
@@ -667,6 +814,7 @@ async def instructor_dashboard_route():
 
 
 @achieveup_bp.route('/achieveup/ai/suggest-skills', methods=['POST'])
+@rate_limit(limits=PAID_API_LIMITS)
 async def achieveup_ai_suggest_skills_route():
     """AI-powered skill suggestions for course (frontend-requested endpoint). (AchieveUp only)"""
     try:
@@ -760,6 +908,7 @@ async def achieveup_ai_suggest_skills_route():
         }), 500
 
 @achieveup_bp.route('/achieveup/ai/analyze-questions', methods=['POST'])
+@rate_limit(limits=PAID_API_LIMITS)
 async def achieveup_ai_analyze_questions_route():
     """AI-powered question analysis (frontend-requested endpoint). (AchieveUp only)"""
     try:
@@ -798,12 +947,12 @@ async def achieveup_ai_analyze_questions_route():
             validation_errors.append("questions array is required")
         elif len(questions) == 0:
             validation_errors.append("questions array cannot be empty")
+        elif len(questions) > MAX_QUESTIONS_PER_ANALYSIS:
+            validation_errors.append(
+                f"questions array cannot have more than {MAX_QUESTIONS_PER_ANALYSIS} questions")
         
-        # Make courseId and quizId optional with intelligent defaults
-        if not course_id:
-            logger.info("courseId not provided, will auto-detect from questions")
-            course_id = "unknown_course"  # Will be detected in service
-            
+        # courseId is checked by the service, which needs it to confirm the
+        # caller teaches the course. quizId is optional.
         if not quiz_id:
             logger.info("quizId not provided, using generic quiz ID")
             quiz_id = "generic_quiz"
@@ -1043,9 +1192,10 @@ async def import_matrices_route():
         }), 200
 
     except Exception as e:
+        logger.error(f"Import matrices route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
-            'message': str(e),
+            'message': 'An unexpected error occurred',
             'statusCode': 500
         }), 500
     
@@ -1115,9 +1265,10 @@ async def import_skills_assignment_route():
         return jsonify(result), 200
 
     except Exception as e:
+        logger.error(f"Import skills route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
-            'message': str(e),
+            'message': 'An unexpected error occurred',
             'statusCode': 500
         }), 500
     
@@ -1143,8 +1294,9 @@ async def get_import_status_route(course_id):
         return jsonify(result), 200
 
     except Exception as e:
+        logger.error(f"Import status route error: {str(e)}")
         return jsonify({
             'error': 'Internal server error',
-            'message': str(e),
+            'message': 'An unexpected error occurred',
             'statusCode': 500
         }), 500
