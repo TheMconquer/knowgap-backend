@@ -1,0 +1,36 @@
+name: Unit tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Fake values
+      DB_CONNECTION_STRING: "mongodb://127.0.0.1:1/test?serverSelectionTimeoutMS=200"
+      HEX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      YOUTUBE_API_KEY: "yt-test"
+      AI_API_KEY: "ai-test"
+      AI_API_URL: "https://ai.example/v1"
+      ACHIEVEUP_JWT_SECRET: "test-secret-for-unit-tests-only-32bytes!!"
+      ENVIRONMENT: "development"
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: python -m unittest discover tests
